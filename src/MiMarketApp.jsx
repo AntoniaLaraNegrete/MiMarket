@@ -2256,8 +2256,9 @@ function OnboardingWizard({ onComplete, profile, setProfile, setProducts }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(28,10,0,0.5)" }}>
-      <div className="w-full rounded-2xl overflow-hidden" style={{ maxWidth: 520, background: C.surface }}>
+    <div className="fixed inset-0 z-50 overflow-y-auto" style={{ background: C.cream }}>
+      <div className="min-h-full flex flex-col items-center justify-start py-8 px-4">
+      <div className="w-full rounded-2xl overflow-hidden" style={{ maxWidth: 520, background: C.surface, boxShadow: "0 8px 32px rgba(0,0,0,0.12)" }}>
 
         {/* Header */}
         <div className="px-6 pt-6 pb-4" style={{ borderBottom: `1px solid ${C.border}` }}>
@@ -2388,6 +2389,7 @@ function OnboardingWizard({ onComplete, profile, setProfile, setProducts }) {
             </div>
           )}
         </div>
+      </div>
       </div>
     </div>
   );
