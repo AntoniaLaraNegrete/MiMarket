@@ -14,58 +14,61 @@ import {
   PieChart, Pie, Cell, LineChart, Line, Legend
 } from "recharts";
 
-/* ============================== TOKENS PASTEL ============================== */
+/* ============================== DESIGN TOKENS ============================== */
 const C = {
-  // Sidebar & estructura
-  ink: "#1C0A00",        // Morado profundo para sidebar
-  inkSoft: "#2D1200",
-  inkLine: "#3D1F00",
+  // Sidebar — azul marino oscuro profesional
+  ink:         "#0F1923",
+  inkSoft:     "#162030",
+  inkLine:     "#1E2D3D",
+  inkText:     "#8FA3B1",
 
-  // Acento principal — rosa coral pastel
-  orange: "#F97316",
-  orangeDark: "#EA580C",
-  orangeLight: "#F8F9FA",
-
-  // Acento secundario — lila
-  teal: "#FB923C",
-  tealLight: "#F1F3F5",
-
-  // Fondo general — lavanda muy suave
-  cream: "#F8F9FA",
-  surface: "#FFFFFF",
-
-  // Texto
-  text: "#1C0A00",
-  textMuted: "#6B7280",
-  border: "#E5E7EB",
+  // Acento principal — naranja vibrante
+  orange:      "#F97316",
+  orangeDark:  "#EA580C",
+  orangeLight: "#FFF4EE",
+  orangeMid:   "#FED7AA",
 
   // Semánticos
-  danger: "#F43F5E",
-  dangerLight: "#FFF1F2",
-  success: "#34D399",
-  successLight: "#ECFDF5",
-  amber: "#FBBF24",
-  amberLight: "#FFFBEB",
-  navy: "#60A5FA",
-  navyLight: "#EFF6FF",
-  plum: "#C084FC",
-  plumLight: "#FAF5FF",
+  success:     "#22C55E",
+  successLight:"#F0FDF4",
+  danger:      "#EF4444",
+  dangerLight: "#FEF2F2",
+  amber:       "#F59E0B",
+  amberLight:  "#FFFBEB",
+  navy:        "#3B82F6",
+  navyLight:   "#EFF6FF",
+  teal:        "#14B8A6",
+  tealLight:   "#F0FDFA",
+  plum:        "#8B5CF6",
+  plumLight:   "#F5F3FF",
 
-  // Cards de categoría — todos pasteles suaves
-  catBebidas:    { bg: "#DBEAFE", fg: "#2563EB" },
-  catSnacks:     { bg: "#FCE7F3", fg: "#DB2777" },
-  catLimpieza:   { bg: "#D1FAE5", fg: "#059669" },
-  catLacteos:    { bg: "#E9ECEF", fg: "#D97706" },
-  catPanaderia:  { bg: "#F1F3F5", fg: "#EA580C" },
-  catAbarrotes:  { bg: "#F0FDF4", fg: "#16A34A" },
-  catCuidado:    { bg: "#F3E8FF", fg: "#9333EA" },
-  catFrutas:     { bg: "#DCFCE7", fg: "#15803D" },
+  // Superficie y fondo
+  cream:       "#F1F5F9",
+  surface:     "#FFFFFF",
+
+  // Texto
+  text:        "#0F172A",
+  textMuted:   "#64748B",
+
+  // Bordes
+  border:      "#E2E8F0",
+
+  // Categorías
+  catBebidas:   { bg: "#EFF6FF", fg: "#1D4ED8" },
+  catSnacks:    { bg: "#FDF2F8", fg: "#9D174D" },
+  catLimpieza:  { bg: "#F0FDFA", fg: "#0F766E" },
+  catLacteos:   { bg: "#FFFBEB", fg: "#92400E" },
+  catPanaderia: { bg: "#FFF7ED", fg: "#C2410C" },
+  catAbarrotes: { bg: "#F0FDF4", fg: "#15803D" },
+  catCuidado:   { bg: "#F5F3FF", fg: "#6D28D9" },
+  catFrutas:    { bg: "#F0FDF4", fg: "#166534" },
 };
 
 const FONT_DISPLAY = "'Space Grotesk', 'Inter', sans-serif";
 const FONT_BODY    = "'Inter', sans-serif";
 const FONT_MONO    = "'JetBrains Mono', monospace";
-const PREMIUM_GRADIENT = "linear-gradient(135deg, #F97316 0%, #FBBF24 100%)";
+const PREMIUM_GRADIENT = "linear-gradient(135deg, #F97316 0%, #FB923C 100%)";
+const SIDEBAR_W = 240;
 
 /* ============================== DATA ============================== */
 const CATEGORY_STYLES = {
@@ -387,7 +390,7 @@ function LoginScreen({ users, onLogin }) {
 }
 
 /* ============================== NOTIFICACIONES ============================== */
-function NotificationBell({ products, fiados, sales }) {
+function NotificationBell({ products, fiados, sales, dark }) {
   const [open, setOpen] = useState(false);
 
   const alerts = useMemo(() => {
@@ -413,8 +416,8 @@ function NotificationBell({ products, fiados, sales }) {
   return (
     <div className="relative">
       <button onClick={() => setOpen(o => !o)} className="relative w-9 h-9 rounded-xl flex items-center justify-center"
-        style={{ background: open ? C.orangeLight : "transparent", border: `1px solid ${C.border}` }}>
-        <Bell size={17} color={C.textMuted} />
+        style={{ background: open ? (dark ? C.inkLine : C.orangeLight) : "transparent", border: `1px solid ${dark ? C.inkLine : C.border}` }}>
+        <Bell size={17} color={dark ? C.inkText : C.textMuted} />
         {alerts.length > 0 && (
           <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold text-white"
             style={{ background: alerts.some(a => a.type === "danger") ? C.danger : C.amber }}>
@@ -474,178 +477,183 @@ function useIsTablet() {
   return isTablet;
 }
 
-/* PC: barra arriba */
-function TopNav({ view, setView, profile, cajaState, currentUser, onLogout, products, fiados, sales }) {
-  const visible = NAV_ITEMS.filter(i=>i.roles.includes(currentUser.role));
-  const primary = visible.slice(0,7);
-  const extra   = visible.slice(7);
-  const [open, setOpen] = useState(false);
+/* ── Sidebar profesional (PC y tablet landscape) ── */
+function Sidebar({ view, setView, currentUser, onLogout, profile, cajaState, products, fiados, sales, isOwner, onOpenAdmin }) {
+  const visible = NAV_ITEMS.filter(i => i.roles.includes(currentUser.role));
+  const initials = currentUser.name.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase();
 
   return (
-    <div className="sticky top-0 z-20 flex items-center px-4 gap-0" style={{ background:"#fff", borderBottom:`1.5px solid ${C.border}`, height:56, boxShadow:"0 1px 12px rgba(249,115,22,0.06)" }}>
+    <div style={{
+      width: SIDEBAR_W, minHeight: "100vh", background: C.ink,
+      display: "flex", flexDirection: "column",
+      position: "fixed", top: 0, left: 0, bottom: 0, zIndex: 30,
+      overflowY: "auto", overflowX: "hidden",
+    }}>
       {/* Logo */}
-      <div className="flex items-center gap-2 pr-5 mr-2 shrink-0" style={{ borderRight:`1.5px solid ${C.border}` }}>
-        <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background:PREMIUM_GRADIENT }}><Store size={15} color="#fff"/></div>
-        <span className="font-bold text-sm" style={{ fontFamily:FONT_DISPLAY, color:C.ink }}>MiMarket</span>
+      <div style={{ padding: "20px 18px 16px", borderBottom: `1px solid ${C.inkLine}` }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ width: 36, height: 36, borderRadius: 10, background: C.orange, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            <Store size={18} color="#fff" />
+          </div>
+          <div>
+            <div style={{ color: "#fff", fontWeight: 700, fontSize: 15, fontFamily: FONT_DISPLAY, lineHeight: 1.2 }}>MiMarket</div>
+            <div style={{ color: C.inkText, fontSize: 10, marginTop: 1 }}>{profile.name}</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Caja status */}
+      <div style={{ padding: "10px 14px", borderBottom: `1px solid ${C.inkLine}` }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 10px", borderRadius: 8, background: cajaState.isOpen ? "rgba(34,197,94,0.1)" : "rgba(239,68,68,0.1)" }}>
+          <div style={{ width: 6, height: 6, borderRadius: "50%", background: cajaState.isOpen ? C.success : C.danger, flexShrink: 0 }} />
+          <Wallet size={12} color={cajaState.isOpen ? C.success : C.danger} />
+          <span style={{ fontSize: 11, color: cajaState.isOpen ? C.success : C.danger, fontWeight: 500 }}>
+            Caja {cajaState.isOpen ? "abierta" : "cerrada"}
+          </span>
+        </div>
       </div>
 
       {/* Nav items */}
-      <div className="flex items-center flex-1 overflow-hidden">
-        {primary.map(item=>{
-          const active = view===item.id;
+      <div style={{ flex: 1, padding: "10px 10px", display: "flex", flexDirection: "column", gap: 2 }}>
+        {visible.map(item => {
+          const active = view === item.id;
           return (
-            <button key={item.id} onClick={()=>setView(item.id)}
-              className="flex items-center gap-1.5 text-xs shrink-0 transition"
-              style={{ color:active?C.orangeDark:C.textMuted, fontWeight:active?600:400, height:56, padding:"0 14px",
-                borderBottom:active?`2.5px solid ${C.orange}`:"2.5px solid transparent", background:"transparent" }}>
-              <item.icon size={14} color={active?C.orange:C.textMuted}/>
-              {item.label}
+            <button key={item.id} onClick={() => setView(item.id)}
+              style={{
+                display: "flex", alignItems: "center", gap: 10,
+                padding: "9px 12px", borderRadius: 10, width: "100%", textAlign: "left",
+                background: active ? C.orange : "transparent",
+                border: "none", cursor: "pointer", transition: "all 0.15s",
+              }}
+              onMouseEnter={e => { if (!active) e.currentTarget.style.background = C.inkLine; }}
+              onMouseLeave={e => { if (!active) e.currentTarget.style.background = "transparent"; }}
+            >
+              <item.icon size={17} color={active ? "#fff" : C.inkText} />
+              <span style={{ fontSize: 13, color: active ? "#fff" : C.inkText, fontWeight: active ? 600 : 400, fontFamily: FONT_BODY }}>
+                {item.label}
+              </span>
             </button>
           );
         })}
-        {extra.length>0 && (
-          <div className="relative">
-            <button onClick={()=>setOpen(o=>!o)} className="flex items-center gap-1 text-xs shrink-0 px-3" style={{ color:C.textMuted, height:56, background:"transparent" }}>
-              <ChevronDown size={13}/> Más
-            </button>
-            {open && (
-              <div className="absolute top-full left-0 rounded-xl shadow-xl py-1 z-50" style={{ background:"#fff", border:`1px solid ${C.border}`, minWidth:160 }}>
-                {extra.map(item=>(
-                  <button key={item.id} onClick={()=>{ setView(item.id); setOpen(false); }}
-                    className="flex items-center gap-2 w-full px-4 py-2.5 text-xs text-left"
-                    style={{ color:view===item.id?C.orangeDark:C.textMuted, background:view===item.id?C.orangeLight:"transparent" }}>
-                    <item.icon size={14} color={view===item.id?C.orange:C.textMuted}/>{item.label}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
       </div>
 
-      {/* Right */}
-      <div className="flex items-center gap-3 pl-4 shrink-0" style={{ borderLeft:`1.5px solid ${C.border}` }}>
-        <NotificationBell products={products} fiados={fiados} sales={sales} />
-        <span className="hidden md:flex items-center gap-1 text-xs px-2 py-1 rounded-full"
-          style={{ background:cajaState.isOpen?C.successLight:C.dangerLight, color:cajaState.isOpen?C.success:C.danger }}>
-          <Wallet size={11}/> {cajaState.isOpen?"Caja abierta":"Caja cerrada"}
-        </span>
-        <PremiumPill/>
-        <div className="hidden lg:block text-right">
-          <div className="text-xs font-semibold" style={{ color:C.text }}>{currentUser.name}</div>
-          <div className="text-[10px]" style={{ color:C.textMuted }}>{currentUser.role==="admin"?"Administrador":"Vendedor"}</div>
+      {/* Admin button — solo visible para la dueña */}
+      {isOwner && (
+        <div style={{ padding: "0 10px 8px" }}>
+          <button onClick={onOpenAdmin} style={{
+            display: "flex", alignItems: "center", gap: 10,
+            padding: "9px 12px", borderRadius: 10, width: "100%", textAlign: "left",
+            background: "rgba(249,115,22,0.15)", border: "1px solid rgba(249,115,22,0.3)",
+            cursor: "pointer",
+          }}>
+            <Crown size={15} color={C.orange} />
+            <span style={{ fontSize: 12, color: C.orange, fontWeight: 600, fontFamily: FONT_BODY }}>
+              Panel Admin
+            </span>
+          </button>
         </div>
-        <button onClick={onLogout} title="Cerrar sesión"
-          className="w-9 h-9 rounded-full flex items-center justify-center font-bold text-sm text-white shadow-sm"
-          style={{ background: currentUser.role==="admin"?C.orange:C.teal }}>
-          {currentUser.name.split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase()}
-        </button>
+      )}
+
+      {/* User + logout */}
+      <div style={{ padding: "12px 14px", borderTop: `1px solid ${C.inkLine}` }}>
+        <NotificationBell products={products} fiados={fiados} sales={sales} dark />
+        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderRadius: 10, marginTop: 6, background: C.inkLine }}>
+          <div style={{ width: 32, height: 32, borderRadius: "50%", background: C.orange, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: "#fff", flexShrink: 0 }}>
+            {initials}
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: "#fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{currentUser.name}</div>
+            <div style={{ fontSize: 10, color: C.inkText }}>{currentUser.role === "admin" ? "Administrador" : "Vendedor"}</div>
+          </div>
+          <button onClick={onLogout} title="Cerrar sesión" style={{ background: "none", border: "none", cursor: "pointer", padding: 4, borderRadius: 6, display: "flex", alignItems: "center" }}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={C.inkText} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+              <polyline points="16 17 21 12 16 7"/>
+              <line x1="21" y1="12" x2="9" y2="12"/>
+            </svg>
+          </button>
+        </div>
       </div>
     </div>
   );
 }
 
-/* iPad: topbar + barra abajo */
-function TabletTopbar({ profile, cajaState, currentUser, onLogout, products, fiados, sales }) {
-  return (
-    <div className="sticky top-0 z-20 flex items-center justify-between px-5 py-3 shadow-sm"
-      style={{ background:"#fff", borderBottom:`1px solid ${C.border}` }}>
-      <div className="flex items-center gap-3">
-        <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background:PREMIUM_GRADIENT }}><Store size={15} color="#fff"/></div>
-        <div>
-          <div className="text-sm font-bold" style={{ color:C.text, fontFamily:FONT_DISPLAY }}>{profile.name}</div>
-          <div className="flex items-center gap-1 text-[10px]" style={{ color:C.success }}>
-            <span className="w-1.5 h-1.5 rounded-full inline-block" style={{ background:C.success }}/> En línea
-          </div>
-        </div>
-      </div>
-      <div className="flex items-center gap-3">
-        <NotificationBell products={products} fiados={fiados} sales={sales} />
-        <span className="flex items-center gap-1 text-xs px-2 py-1 rounded-full"
-          style={{ background:cajaState.isOpen?C.successLight:C.dangerLight, color:cajaState.isOpen?C.success:C.danger }}>
-          <Wallet size={11}/> {cajaState.isOpen?"Abierta":"Cerrada"}
-        </span>
-        <PremiumPill/>
-        <button onClick={onLogout} className="w-9 h-9 rounded-full flex items-center justify-center font-bold text-sm text-white shadow-sm"
-          style={{ background:currentUser.role==="admin"?C.orange:C.teal }}>
-          {currentUser.name.split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase()}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function BottomTabBar({ view, setView, currentUser }) {
-  const visible  = NAV_ITEMS.filter(i=>i.roles.includes(currentUser.role));
-  const primary  = visible.slice(0,4);
-  const extra    = visible.slice(4);
-  const [open, setOpen] = useState(false);
-  const moreActive = extra.some(i=>i.id===view);
+/* ── Topbar (solo en móvil/tablet portrait) ── */
+function MobileTopbar({ view, setView, currentUser, onLogout, profile, cajaState, products, fiados, sales, isOwner, onOpenAdmin }) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const visible = NAV_ITEMS.filter(i => i.roles.includes(currentUser.role));
+  const initials = currentUser.name.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase();
 
   return (
     <>
-      {open && (
-        <div className="fixed inset-0 z-30" onClick={()=>setOpen(false)}>
-          <div className="absolute bottom-24 left-4 right-4 rounded-2xl shadow-2xl overflow-hidden"
-            onClick={e=>e.stopPropagation()} style={{ background:"#fff", border:`1px solid ${C.border}` }}>
-            <div className="px-4 py-3 text-xs font-semibold" style={{ color:C.textMuted, borderBottom:`1px solid ${C.border}` }}>Más módulos</div>
-            <div className="grid grid-cols-4">
-              {extra.map(item=>{
-                const active = view===item.id;
+      <div style={{
+        position: "fixed", top: 0, left: 0, right: 0, zIndex: 40,
+        background: C.ink, height: 56,
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+        padding: "0 16px", boxShadow: "0 2px 12px rgba(0,0,0,0.25)"
+      }}>
+        <button onClick={() => setMenuOpen(true)} style={{ background: "none", border: "none", cursor: "pointer", padding: 4 }}>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={C.inkText} strokeWidth="2">
+            <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
+          </svg>
+        </button>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={{ width: 26, height: 26, borderRadius: 7, background: C.orange, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <Store size={13} color="#fff" />
+          </div>
+          <span style={{ color: "#fff", fontWeight: 700, fontSize: 15, fontFamily: FONT_DISPLAY }}>MiMarket</span>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <NotificationBell products={products} fiados={fiados} sales={sales} dark />
+          <div style={{ width: 32, height: 32, borderRadius: "50%", background: C.orange, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: "#fff" }}>
+            {initials}
+          </div>
+        </div>
+      </div>
+
+      {/* Drawer */}
+      {menuOpen && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 50, display: "flex" }} onClick={() => setMenuOpen(false)}>
+          <div style={{ width: SIDEBAR_W, background: C.ink, height: "100%", display: "flex", flexDirection: "column", overflowY: "auto" }} onClick={e => e.stopPropagation()}>
+            <div style={{ padding: "16px 18px", borderBottom: `1px solid ${C.inkLine}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ color: "#fff", fontWeight: 700, fontFamily: FONT_DISPLAY }}>{profile.name}</span>
+              <button onClick={() => setMenuOpen(false)} style={{ background: "none", border: "none", cursor: "pointer" }}>
+                <X size={18} color={C.inkText} />
+              </button>
+            </div>
+            <div style={{ flex: 1, padding: "10px", display: "flex", flexDirection: "column", gap: 2 }}>
+              {visible.map(item => {
+                const active = view === item.id;
                 return (
-                  <button key={item.id} onClick={()=>{ setView(item.id); setOpen(false); }}
-                    className="flex flex-col items-center gap-1.5 py-4"
-                    style={{ background:active?C.orangeLight:"transparent" }}>
-                    <div className="w-10 h-10 rounded-xl flex items-center justify-center"
-                      style={{ background:active?C.orange:C.cream }}>
-                      <item.icon size={20} color={active?"#fff":C.textMuted}/>
-                    </div>
-                    <span className="text-[10px] font-medium" style={{ color:active?C.orangeDark:C.textMuted }}>{item.label}</span>
+                  <button key={item.id} onClick={() => { setView(item.id); setMenuOpen(false); }}
+                    style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", borderRadius: 10, width: "100%", textAlign: "left", background: active ? C.orange : "transparent", border: "none", cursor: "pointer" }}>
+                    <item.icon size={17} color={active ? "#fff" : C.inkText} />
+                    <span style={{ fontSize: 13, color: active ? "#fff" : C.inkText, fontWeight: active ? 600 : 400 }}>{item.label}</span>
                   </button>
                 );
               })}
             </div>
+            <div style={{ padding: "12px 14px", borderTop: `1px solid ${C.inkLine}` }}>
+              <button onClick={onLogout} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", borderRadius: 10, width: "100%", background: "none", border: "none", cursor: "pointer" }}>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={C.inkText} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>
+                </svg>
+                <span style={{ fontSize: 13, color: C.inkText }}>Cerrar sesión</span>
+              </button>
+            </div>
           </div>
+          <div style={{ flex: 1, background: "rgba(0,0,0,0.5)" }} />
         </div>
       )}
-      <div className="fixed bottom-0 left-0 right-0 z-20 shadow-lg"
-        style={{ background:"#fff", borderTop:`1.5px solid ${C.border}` }}>
-        <div className="flex">
-          {primary.map(item=>{
-            const active = view===item.id;
-            return (
-              <button key={item.id} onClick={()=>setView(item.id)} className="flex-1 flex flex-col items-center gap-1 py-3">
-                <div className="relative">
-                  {active && <div className="absolute -top-2 left-1/2 -translate-x-1/2 w-6 h-1 rounded-b-full" style={{ background:C.orange }}/>}
-                  <div className="w-10 h-10 rounded-xl flex items-center justify-center"
-                    style={{ background:active?C.orangeLight:"transparent" }}>
-                    <item.icon size={22} color={active?C.orange:"#D1D5DB"}/>
-                  </div>
-                </div>
-                <span className="text-[10px] font-medium" style={{ color:active?C.orange:"#9CA3AF" }}>{item.label}</span>
-              </button>
-            );
-          })}
-          {extra.length>0 && (
-            <button onClick={()=>setOpen(o=>!o)} className="flex-1 flex flex-col items-center gap-1 py-3">
-              <div className="relative">
-                {moreActive && <div className="absolute -top-2 left-1/2 -translate-x-1/2 w-6 h-1 rounded-b-full" style={{ background:C.orange }}/>}
-                <div className="w-10 h-10 rounded-xl flex items-center justify-center"
-                  style={{ background:moreActive?C.orangeLight:"transparent" }}>
-                  <Layers size={22} color={moreActive?C.orange:"#D1D5DB"}/>
-                </div>
-              </div>
-              <span className="text-[10px] font-medium" style={{ color:moreActive?C.orange:"#9CA3AF" }}>Más</span>
-            </button>
-          )}
-        </div>
-      </div>
     </>
   );
 }
 
+
+
+
 /* ============================== PANEL ============================== */
-function PanelView({ products, sales, fiados, profile, setView }) {
+function PanelView({ products, sales, fiados, profile, setView, currentUser }) {
   const today = todayISO();
   const salesToday = sales.filter(s=>s.datetime.slice(0,10)===today);
   const totalHoy   = salesToday.reduce((s,x)=>s+x.total,0);
@@ -653,15 +661,14 @@ function PanelView({ products, sales, fiados, profile, setView }) {
   const lowStock   = products.filter(p=>p.stock<=5);
 
   const stats = [
-    { label:"Ventas hoy",       value:formatCLP(totalHoy),      icon:TrendingUp,      color:C.orangeDark, bg:C.orangeLight },
-    { label:"Boletas hoy",      value:salesToday.length,         icon:Receipt,         color:C.navy,       bg:C.navyLight   },
-    { label:"Fiados pendientes",value:formatCLP(totalFiado),     icon:Coins,           color:C.teal,       bg:C.tealLight   },
-    { label:"Suscripción",      value:"27 días",                 icon:Sparkles,        color:C.plum,       bg:C.plumLight   },
+    { label:"Ventas hoy",       value:formatCLP(totalHoy),      icon:TrendingUp,      color:C.orange,       bg:C.orangeLight },
+    { label:"Boletas hoy",      value:salesToday.length,         icon:Receipt,         color:C.navy,         bg:C.navyLight   },
+    { label:"Fiados pendientes",value:formatCLP(totalFiado),     icon:Coins,           color:C.plum,         bg:C.plumLight   },
   ];
 
   return (
     <div>
-      <PageHeader title="Hola, Anner 👋" subtitle={`Resumen del día · ${formatDate(today)} · ${profile.name}`}/>
+      <PageHeader title={`Hola, ${currentUser?.name?.split(" ")[0] || "bienvenido"} 👋`} subtitle={`Resumen del día · ${formatDate(today)} · ${profile.name}`}/>
       {lowStock.length>0 && (
         <div onClick={()=>setView("inventario")} className="flex items-center gap-3 px-4 py-3 rounded-xl mb-5 cursor-pointer"
           style={{ background:C.amberLight, border:`1px solid #FDE68A` }}>
@@ -2314,7 +2321,8 @@ function OnboardingWizard({ onComplete, profile, setProfile, setProducts }) {
                   <input style={inputStyle} value={biz.region} onChange={e => setBiz({ ...biz, region: e.target.value })} placeholder="Ej: Valparaíso" />
                 </Field>
               </div>
-              <div className="flex justify-end mt-6">
+              <div className="flex justify-between mt-6">
+                <Btn variant="ghost" onClick={onComplete}>Saltar por ahora</Btn>
                 <Btn disabled={!biz.name.trim()} onClick={() => setStep(2)}>
                   Siguiente <ChevronRight size={16} />
                 </Btn>
@@ -2396,7 +2404,7 @@ function OnboardingWizard({ onComplete, profile, setProfile, setProducts }) {
 }
 
 
-export default function App() {
+export default function App({ session, onLogout, isOwner, onOpenAdmin }) {
   const [currentUser, setCurrentUser] = useState(null);
   const [users,       setUsers]       = useState(SEED_USERS);
   const [view,        setView]        = useState("panel");
@@ -2422,7 +2430,10 @@ export default function App() {
     setView(fv?.id || "venta");
     if (user.role === "admin" && products.length === 0) setOnboarding(true);
   }
-  function handleLogout() { setCurrentUser(null); setView("panel"); setCart([]); }
+  function handleLogout() {
+    if (onLogout) onLogout();
+    else { setCurrentUser(null); setView("panel"); setCart([]); }
+  }
   function addUser(u) { setUsers([...users, { id: uid("u"), ...u }]); showToast("Usuario creado"); }
   function deleteUser(id) { setUsers(users.filter(u => u.id !== id)); showToast("Usuario eliminado"); }
 
@@ -2457,7 +2468,7 @@ export default function App() {
 
   const content = (
     <div className="p-4 md:p-7" style={{ paddingBottom: isTablet ? 100 : 32 }}>
-      {view === "panel"      && currentUser.role === "admin" && <PanelView products={products} sales={sales} fiados={fiados} profile={profile} setView={setView} />}
+      {view === "panel"      && currentUser.role === "admin" && <PanelView products={products} sales={sales} fiados={fiados} profile={profile} setView={setView} currentUser={currentUser} />}
       {view === "inventario" && currentUser.role === "admin" && <InventarioView products={products} setProducts={setProducts} showToast={showToast} />}
       {view === "venta"                                       && <VentaView {...viewProps} />}
       {view === "reporte"    && currentUser.role === "admin" && <ReporteView sales={sales} products={products} />}
@@ -2472,20 +2483,31 @@ export default function App() {
     </div>
   );
 
+  const navProps = { view, setView, currentUser, onLogout: handleLogout, profile, cajaState, products, fiados, sales, isOwner, onOpenAdmin };
+
   return (
     <div style={{ fontFamily: FONT_BODY, background: C.cream, minHeight: "100vh" }}>
       <style>{STYLES}</style>
       {isTablet ? (
+        /* Tablet / móvil — topbar hamburguesa arriba + contenido full width */
         <>
-          <TabletTopbar profile={profile} cajaState={cajaState} currentUser={currentUser} onLogout={handleLogout} products={products} fiados={fiados} sales={sales} />
-          {content}
-          <BottomTabBar view={view} setView={setView} currentUser={currentUser} />
+          <MobileTopbar {...navProps} />
+          <div style={{ paddingTop: 56, minHeight: "100vh" }}>
+            <div style={{ maxWidth: 1200, margin: "0 auto", padding: "24px 16px" }}>
+              {content}
+            </div>
+          </div>
         </>
       ) : (
-        <>
-          <TopNav view={view} setView={setView} profile={profile} cajaState={cajaState} currentUser={currentUser} onLogout={handleLogout} products={products} fiados={fiados} sales={sales} />
-          {content}
-        </>
+        /* PC — sidebar fijo izquierdo + contenido con margen */
+        <div style={{ display: "flex", minHeight: "100vh" }}>
+          <Sidebar {...navProps} />
+          <div style={{ marginLeft: SIDEBAR_W, flex: 1, minWidth: 0 }}>
+            <div style={{ maxWidth: 1200, margin: "0 auto", padding: "28px 32px" }}>
+              {content}
+            </div>
+          </div>
+        </div>
       )}
       <Toast toast={toast} />
       {onboarding && (
@@ -2493,7 +2515,7 @@ export default function App() {
           profile={profile}
           setProfile={setProfile}
           setProducts={setProducts}
-          onComplete={() => { setOnboarding(false); showToast("\u00a1Bienvenido a MiMarket! \ud83c\udf89"); }}
+          onComplete={() => { setOnboarding(false); showToast("¡Bienvenido a MiMarket! 🎉"); }}
         />
       )}
     </div>
