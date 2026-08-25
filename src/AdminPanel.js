@@ -17,9 +17,24 @@ const GRADIENT = 'linear-gradient(135deg, #F97316 0%, #FB923C 100%)';
 
 function uid() { return 'MKT-' + Math.random().toString(36).slice(2,6).toUpperCase(); }
 
+// Referencia de los tipos de negocio y módulos disponibles en la app
+const BUSINESS_TYPES_REF = [
+  { id: 'minimarket', label: 'Minimarket / Almacén',         emoji: '🏪', modules: ['Inventario y ventas'] },
+  { id: 'botilleria', label: 'Botillería',                   emoji: '🍾', modules: ['Inventario y ventas'] },
+  { id: 'petshop',    label: 'Petshop',                      emoji: '🐾', modules: ['Inventario y ventas'] },
+  { id: 'verduleria', label: 'Verdulería / Frutería',        emoji: '🥕', modules: ['Inventario y ventas'] },
+  { id: 'libreria',   label: 'Librería / Papelería',         emoji: '📚', modules: ['Inventario y ventas'] },
+  { id: 'panaderia',  label: 'Panadería / Pastelería',       emoji: '🥐', modules: ['Inventario y ventas', 'Pedidos a solicitud'] },
+  { id: 'salon',      label: 'Salón de belleza / Servicios', emoji: '💇', modules: ['Agenda de servicios'] },
+  { id: 'otro',       label: 'Otro / Personalizado',         emoji: '✨', modules: ['Inventario y ventas'] },
+];
+function tipoInfo(id) {
+  return BUSINESS_TYPES_REF.find(b => b.id === id) || { label: id || 'Sin definir', emoji: '❔', modules: [] };
+}
+
 export default function AdminPanel({ onExit }) {
   const [codigos, setCodigos] = useState([]);
-  const [usuarios, setUsuarios] = useState([]);
+  const [negocios, setNegocios] = useState([]);
   const [loading, setLoading] = useState(true);
   const [notas, setNotas] = useState('');
   const [cantidad, setCantidad] = useState(1);
@@ -31,12 +46,12 @@ export default function AdminPanel({ onExit }) {
 
   async function cargarDatos() {
     setLoading(true);
-    const [{ data: c }, { data: u }] = await Promise.all([
+    const [{ data: c }, { data: n }] = await Promise.all([
       supabase.from('codigos_acceso').select('*').order('creado_en', { ascending: false }),
-      supabase.auth.admin ? supabase.from('organizaciones').select('*').order('creado_en', { ascending: false }) : { data: [] }
+      supabase.from('perfiles_negocio').select('*').order('created_at', { ascending: false }),
     ]);
     setCodigos(c || []);
-    setUsuarios(u || []);
+    setNegocios(n || []);
     setLoading(false);
   }
 
@@ -95,7 +110,7 @@ export default function AdminPanel({ onExit }) {
           {[
             { label: 'Códigos disponibles', value: disponibles.length, color: C.success, bg: C.successLight },
             { label: 'Códigos usados', value: usados.length, color: C.orange, bg: C.orangeLight },
-            { label: 'Total clientes', value: usados.length, color: C.inkText, bg: C.cream },
+            { label: 'Total clientes', value: negocios.length, color: C.inkText, bg: C.cream },
           ].map(s => (
             <div key={s.label} style={{ background: C.surface, borderRadius: 16, padding: '16px 20px', border: `1px solid ${C.border}` }}>
               <div style={{ fontSize: 28, fontWeight: 700, color: s.color, fontFamily: FONT_MONO }}>{s.value}</div>
@@ -133,7 +148,7 @@ export default function AdminPanel({ onExit }) {
 
         {/* Tabs */}
         <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-          {[['codigos', `Disponibles (${disponibles.length})`], ['usados', `Usados (${usados.length})`]].map(([id, label]) => (
+          {[['codigos', `Disponibles (${disponibles.length})`], ['usados', `Usados (${usados.length})`], ['negocios', `Negocios (${negocios.length})`], ['categorias', 'Tipos de negocio']].map(([id, label]) => (
             <button key={id} onClick={() => setTab(id)} style={{
               padding: '8px 16px', borderRadius: 10, fontSize: 13, fontWeight: 600,
               background: tab === id ? C.ink : 'transparent',
@@ -144,7 +159,70 @@ export default function AdminPanel({ onExit }) {
           ))}
         </div>
 
+        {/* Tabla de negocios registrados */}
+        {tab === 'negocios' && (
+          <div style={{ background: C.surface, borderRadius: 16, border: `1px solid ${C.border}`, overflow: 'hidden' }}>
+            {loading ? (
+              <div style={{ padding: 40, textAlign: 'center', color: C.textMuted, fontSize: 13 }}>Cargando...</div>
+            ) : negocios.length === 0 ? (
+              <div style={{ padding: 32, textAlign: 'center', color: C.textMuted, fontSize: 13 }}>
+                Aún no hay negocios registrados. Aparecerán aquí en cuanto un cliente complete su configuración inicial.
+              </div>
+            ) : (
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                <thead>
+                  <tr style={{ background: C.cream }}>
+                    {['Negocio', 'Correo', 'Tipo', 'Módulos activos', 'Registrado'].map(h => (
+                      <th key={h} style={{ textAlign: 'left', padding: '12px 16px', fontWeight: 600, fontSize: 11, color: C.textMuted, textTransform: 'uppercase' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {negocios.map(n => {
+                    const t = tipoInfo(n.type);
+                    return (
+                      <tr key={n.id} style={{ borderTop: `1px solid ${C.border}` }}>
+                        <td style={{ padding: '12px 16px', fontWeight: 600, color: C.text }}>{n.name || '—'}</td>
+                        <td style={{ padding: '12px 16px', color: C.textMuted, fontSize: 12 }}>{n.email || '—'}</td>
+                        <td style={{ padding: '12px 16px' }}>
+                          <span style={{ fontSize: 12 }}>{t.emoji} {t.label}</span>
+                        </td>
+                        <td style={{ padding: '12px 16px', color: C.textMuted, fontSize: 12 }}>
+                          {(n.modules || []).map(m => ({ inventario: 'Inventario', pedidos: 'Pedidos', agenda: 'Agenda' }[m] || m)).join(' + ') || '—'}
+                        </td>
+                        <td style={{ padding: '12px 16px', color: C.textMuted, fontSize: 12 }}>
+                          {n.created_at ? new Date(n.created_at).toLocaleDateString('es-CL') : '—'}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+          </div>
+        )}
+
+        {/* Referencia: tipos de negocio y módulos disponibles en la app */}
+        {tab === 'categorias' && (
+          <div style={{ background: C.surface, borderRadius: 16, border: `1px solid ${C.border}`, padding: 20 }}>
+            <p style={{ fontSize: 12, color: C.textMuted, marginBottom: 16 }}>
+              Estos son los tipos de negocio que un cliente puede elegir al configurar su cuenta, y qué módulo activa cada uno automáticamente.
+            </p>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 12 }}>
+              {BUSINESS_TYPES_REF.map(bt => (
+                <div key={bt.id} style={{ border: `1px solid ${C.border}`, borderRadius: 14, padding: 14 }}>
+                  <div style={{ fontSize: 22, marginBottom: 6 }}>{bt.emoji}</div>
+                  <div style={{ fontWeight: 700, fontSize: 13, color: C.text, marginBottom: 4 }}>{bt.label}</div>
+                  <div style={{ fontSize: 11, color: C.textMuted }}>{bt.modules.join(' + ')}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+
         {/* Tabla códigos */}
+        {(tab === 'codigos' || tab === 'usados') && (
         <div style={{ background: C.surface, borderRadius: 16, border: `1px solid ${C.border}`, overflow: 'hidden' }}>
           {loading ? (
             <div style={{ padding: 40, textAlign: 'center', color: C.textMuted, fontSize: 13 }}>Cargando...</div>
@@ -207,6 +285,7 @@ export default function AdminPanel({ onExit }) {
             </table>
           )}
         </div>
+        )}
 
         {/* Instrucciones */}
         <div style={{ background: C.orangeLight, borderRadius: 16, padding: '16px 20px', marginTop: 20, border: `1px solid ${C.orangeDark}20` }}>
