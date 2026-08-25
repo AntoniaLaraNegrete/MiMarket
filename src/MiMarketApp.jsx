@@ -258,6 +258,51 @@ function Toast({ toast }) {
 /* ============================== AUTH / USERS ============================== */
 const SEED_USERS = [];
 
+function PinBoxes({ value, onChange, autoFocus, error }) {
+  const refs = useRef([]);
+
+  function handleChange(idx, raw) {
+    const digit = raw.replace(/\D/g, "").slice(-1);
+    const next = value.split("");
+    next[idx] = digit || "";
+    const joined = next.join("").slice(0, 4);
+    onChange(joined);
+    if (digit && idx < 3) refs.current[idx + 1]?.focus();
+  }
+
+  function handleKeyDown(idx, e) {
+    if (e.key === "Backspace" && !value[idx] && idx > 0) {
+      refs.current[idx - 1]?.focus();
+    }
+  }
+
+  return (
+    <div className="flex gap-2 sm:gap-2.5">
+      {[0, 1, 2, 3].map(i => (
+        <input
+          key={i}
+          ref={el => (refs.current[i] = el)}
+          autoFocus={autoFocus && i === 0}
+          type="password"
+          inputMode="numeric"
+          maxLength={1}
+          value={value[i] || ""}
+          onChange={e => handleChange(i, e.target.value)}
+          onKeyDown={e => handleKeyDown(i, e)}
+          className="text-center font-bold text-lg outline-none transition-all w-11 h-12 sm:w-[52px] sm:h-14"
+          style={{
+            borderRadius: 14,
+            border: `1.5px solid ${error ? C.danger : (value[i] ? C.orange : C.border)}`,
+            background: value[i] ? C.orangeLight : "#fff",
+            color: C.text, fontFamily: FONT_MONO,
+            boxShadow: value[i] ? `0 0 0 3px ${C.orange}1A` : "none",
+          }}
+        />
+      ))}
+    </div>
+  );
+}
+
 function CreateAccountScreen({ onCreated }) {
   const [name, setName] = useState("");
   const [pin,  setPin]  = useState("");
@@ -272,50 +317,67 @@ function CreateAccountScreen({ onCreated }) {
   }
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center p-6"
-      style={{ background: "linear-gradient(145deg, #F8F9FA 0%, #F1F3F5 60%, #E9ECEF 100%)" }}>
-      <div className="flex items-center gap-3 mb-2">
-        <div className="w-12 h-12 rounded-2xl flex items-center justify-center shadow-md"
-          style={{ background: `linear-gradient(135deg, ${C.orange}, #FBBF24)` }}>
-          <Store size={22} color="#fff" />
+    <div className="min-h-screen flex flex-col items-center justify-center p-6" style={{
+      background: `radial-gradient(circle at 50% 0%, #FFF7ED 0%, #F8FAFC 45%, #F1F5F9 100%)`
+    }}>
+      <div className="flex flex-col items-center mb-8">
+        <div className="w-16 h-16 rounded-3xl flex items-center justify-center mb-4"
+          style={{ background: PREMIUM_GRADIENT, boxShadow: `0 12px 28px ${C.orange}40` }}>
+          <Store size={28} color="#fff" />
         </div>
-        <span className="font-bold text-2xl" style={{ fontFamily: FONT_DISPLAY, color: C.ink }}>MiMarket</span>
+        <span className="font-bold text-3xl" style={{ fontFamily: FONT_DISPLAY, color: C.ink, letterSpacing: -0.5 }}>MiMarket</span>
+        <p className="text-sm mt-1.5" style={{ color: C.textMuted }}>Sistema de gestión para minimarkets</p>
       </div>
-      <p className="text-sm mb-10" style={{ color: C.textMuted }}>Sistema de gestión para minimarkets</p>
 
-      <div className="w-full max-w-sm">
-        <div className="rounded-2xl p-6 shadow-sm" style={{ background: "#fff", border: `1px solid ${C.border}` }}>
-          <h2 className="font-bold text-lg mb-1" style={{ fontFamily: FONT_DISPLAY, color: C.text }}>Crea tu cuenta de administrador</h2>
-          <p className="text-xs mb-6" style={{ color: C.textMuted }}>Esto solo ocurre una vez. Después puedes agregar más usuarios.</p>
+      <div className="w-full max-w-sm md:max-w-md">
+        <div className="rounded-3xl p-6 sm:p-7 md:p-9" style={{
+          background: "#fff",
+          boxShadow: "0 24px 60px -12px rgba(15,23,41,0.12), 0 4px 14px rgba(15,23,41,0.04)",
+          border: `1px solid ${C.border}`,
+        }}>
+          <div className="flex items-center gap-2 mb-1">
+            <Sparkles size={15} color={C.orange} />
+            <span className="text-xs font-bold uppercase tracking-wide" style={{ color: C.orange }}>Primer acceso</span>
+          </div>
+          <h2 className="font-bold text-xl md:text-2xl mb-1.5" style={{ fontFamily: FONT_DISPLAY, color: C.text }}>Crea tu cuenta de administrador</h2>
+          <p className="text-xs md:text-sm mb-7" style={{ color: C.textMuted }}>Esto solo ocurre una vez. Después podrás agregar más usuarios.</p>
 
-          <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-5">
             <Field label="Tu nombre completo">
               <input style={inputStyle} value={name} onChange={e => setName(e.target.value)} placeholder="Ej: María González" />
             </Field>
-            <Field label="Crea un PIN de 4 dígitos">
-              <input type="password" maxLength={4} style={inputStyle} value={pin}
-                onChange={e => setPin(e.target.value.replace(/\D/g, "").slice(0, 4))} placeholder="••••" />
-            </Field>
-            <Field label="Repite el PIN">
-              <input type="password" maxLength={4} style={inputStyle} value={pin2}
-                onChange={e => setPin2(e.target.value.replace(/\D/g, "").slice(0, 4))} placeholder="••••" />
-            </Field>
+
+            <label className="block">
+              <span className="block text-xs font-semibold mb-2" style={{ color: C.textMuted }}>Crea un PIN de 4 dígitos</span>
+              <PinBoxes value={pin} onChange={setPin} autoFocus error={!!err && pin.length !== 4} />
+            </label>
+
+            <label className="block">
+              <span className="block text-xs font-semibold mb-2" style={{ color: C.textMuted }}>Repite el PIN</span>
+              <PinBoxes value={pin2} onChange={setPin2} error={!!err && pin !== pin2} />
+            </label>
           </div>
 
-          {err && <p className="text-xs mt-3" style={{ color: C.danger }}>{err}</p>}
+          {err && (
+            <div className="flex items-center gap-2 mt-4 px-3 py-2.5 rounded-xl" style={{ background: C.dangerLight }}>
+              <AlertTriangle size={14} color={C.danger} />
+              <p className="text-xs font-medium" style={{ color: C.danger }}>{err}</p>
+            </div>
+          )}
 
-          <Btn full onClick={handleCreate} style={{ marginTop: 20 }}>
+          <Btn full onClick={handleCreate} style={{ marginTop: 22 }}>
             <Check size={16} /> Crear cuenta y comenzar
           </Btn>
         </div>
 
-        <p className="text-xs text-center mt-4" style={{ color: C.textMuted }}>
-          Podrás agregar vendedores desde Configurar → Usuarios
+        <p className="text-xs text-center mt-5" style={{ color: C.textMuted }}>
+          Podrás agregar vendedores desde <strong>Configurar → Usuarios</strong>
         </p>
       </div>
     </div>
   );
 }
+
 
 function LoginScreen({ users, onLogin }) {
   const [sel, setSel] = useState(null);
@@ -323,65 +385,101 @@ function LoginScreen({ users, onLogin }) {
   const [err, setErr] = useState("");
 
   function digit(d) {
-    if (pin.length>=4) return;
-    const next = pin+d; setPin(next); setErr("");
-    if (next.length===4) {
-      setTimeout(()=>{ if (next===sel.pin) onLogin(sel); else { setErr("PIN incorrecto"); setPin(""); } }, 120);
+    if (pin.length >= 4) return;
+    const next = pin + d; setPin(next); setErr("");
+    if (next.length === 4) {
+      setTimeout(() => {
+        if (next === sel.pin) onLogin(sel);
+        else { setErr("PIN incorrecto"); setPin(""); }
+      }, 120);
     }
   }
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center p-6" style={{ background:`linear-gradient(145deg, #F8F9FA 0%, #F1F3F5 50%, #E9ECEF 100%)` }}>
-      <div className="flex items-center gap-3 mb-10">
-        <div className="w-12 h-12 rounded-2xl flex items-center justify-center shadow-lg" style={{ background:PREMIUM_GRADIENT }}><Store size={22} color="#fff"/></div>
-        <span className="font-bold text-2xl" style={{ fontFamily:FONT_DISPLAY, color:C.ink }}>MiMarket</span>
+    <div className="min-h-screen flex flex-col items-center justify-center p-6" style={{
+      background: `radial-gradient(circle at 50% 0%, #FFF7ED 0%, #F8FAFC 45%, #F1F5F9 100%)`
+    }}>
+      <div className="flex flex-col items-center mb-8 sm:mb-10">
+        <div className="w-16 h-16 rounded-3xl flex items-center justify-center mb-4"
+          style={{ background: PREMIUM_GRADIENT, boxShadow: `0 12px 28px ${C.orange}40` }}>
+          <Store size={28} color="#fff" />
+        </div>
+        <span className="font-bold text-3xl" style={{ fontFamily: FONT_DISPLAY, color: C.ink, letterSpacing: -0.5 }}>MiMarket</span>
       </div>
 
       {!sel ? (
-        <div className="w-full max-w-sm">
-          <h2 className="text-center font-bold text-lg mb-1" style={{ fontFamily:FONT_DISPLAY, color:C.text }}>¿Quién eres?</h2>
-          <p className="text-center text-sm mb-6" style={{ color:C.textMuted }}>Selecciona tu usuario para continuar</p>
-          <div className="flex flex-col gap-3">
-            {users.map(u=>(
-              <button key={u.id} onClick={()=>{ setSel(u); setPin(""); setErr(""); }}
-                className="flex items-center gap-4 p-4 rounded-2xl text-left shadow-sm"
-                style={{ background:"#fff", border:`1.5px solid ${C.border}` }}>
-                <div className="w-11 h-11 rounded-full flex items-center justify-center font-bold text-white text-sm shrink-0"
-                  style={{ background: u.role==="admin" ? C.orange : C.teal }}>
-                  {u.name.split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase()}
+        <div className="w-full max-w-sm md:max-w-2xl">
+          <h2 className="text-center font-bold text-xl mb-1.5" style={{ fontFamily: FONT_DISPLAY, color: C.text }}>¿Quién eres?</h2>
+          <p className="text-center text-sm mb-7" style={{ color: C.textMuted }}>Selecciona tu usuario para continuar</p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {users.map(u => (
+              <button key={u.id} onClick={() => { setSel(u); setPin(""); setErr(""); }}
+                className="flex items-center gap-4 p-4 rounded-2xl text-left transition-all"
+                style={{
+                  background: "#fff", border: `1px solid ${C.border}`,
+                  boxShadow: "0 8px 20px -8px rgba(15,23,41,0.10)",
+                }}
+                onMouseEnter={e => { e.currentTarget.style.boxShadow = "0 12px 28px -8px rgba(15,23,41,0.16)"; e.currentTarget.style.borderColor = C.orange + "50"; }}
+                onMouseLeave={e => { e.currentTarget.style.boxShadow = "0 8px 20px -8px rgba(15,23,41,0.10)"; e.currentTarget.style.borderColor = C.border; }}
+              >
+                <div className="w-12 h-12 rounded-2xl flex items-center justify-center font-bold text-white text-sm shrink-0"
+                  style={{ background: u.role === "admin" ? PREMIUM_GRADIENT : C.teal }}>
+                  {u.name.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase()}
                 </div>
-                <div>
-                  <div className="font-semibold" style={{ color:C.text }}>{u.name}</div>
-                  <div className="text-xs mt-0.5" style={{ color:C.textMuted }}>{u.role==="admin"?"Administrador · Acceso completo":"Vendedor · Acceso limitado"}</div>
+                <div className="flex-1">
+                  <div className="font-semibold text-sm" style={{ color: C.text }}>{u.name}</div>
+                  <div className="text-xs mt-0.5 flex items-center gap-1" style={{ color: C.textMuted }}>
+                    {u.role === "admin" ? <Crown size={11} color={C.orange} /> : <UserCheck size={11} color={C.teal} />}
+                    {u.role === "admin" ? "Administrador · Acceso completo" : "Vendedor · Acceso limitado"}
+                  </div>
                 </div>
-                <ChevronRight size={18} color={C.textMuted} style={{ marginLeft:"auto" }}/>
+                <ChevronRight size={18} color={C.textMuted} />
               </button>
             ))}
           </div>
         </div>
       ) : (
-        <div className="w-full max-w-xs flex flex-col items-center">
-          <button onClick={()=>{ setSel(null); setPin(""); setErr(""); }} className="flex items-center gap-1 text-sm mb-8" style={{ color:C.textMuted }}>
-            <ChevronLeft size={16}/> Volver
-          </button>
-          <div className="w-14 h-14 rounded-full flex items-center justify-center font-bold text-white text-lg mb-3 shadow-md"
-            style={{ background: sel.role==="admin"?C.orange:C.teal }}>
-            {sel.name.split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase()}
-          </div>
-          <div className="font-bold mb-1" style={{ fontFamily:FONT_DISPLAY, color:C.text }}>{sel.name}</div>
-          <div className="text-xs mb-8" style={{ color:C.textMuted }}>Ingresa tu PIN de 4 dígitos</div>
-          <div className="flex gap-4 mb-4">
-            {[0,1,2,3].map(i=><div key={i} className="w-4 h-4 rounded-full" style={{ background: i<pin.length?C.orange:"#E5E7EB" }}/>)}
-          </div>
-          {err ? <p className="text-xs mb-4 text-center" style={{ color:C.danger }}>{err}</p> : <div className="mb-4 h-4"/>}
-          <div className="grid grid-cols-3 gap-3 w-full max-w-[240px]">
-            {["1","2","3","4","5","6","7","8","9","","0","⌫"].map(d=>(
-              <button key={d} onClick={()=>d==="⌫"?setPin(p=>p.slice(0,-1)):d!==""?digit(d):null} disabled={d===""}
-                className="h-14 rounded-2xl font-bold text-lg disabled:opacity-0 shadow-sm"
-                style={{ background: d==="⌫"?"#F3F4F6":"#fff", color:C.text, border:`1px solid ${C.border}`, fontFamily:FONT_MONO }}>
-                {d}
-              </button>
-            ))}
+        <div className="w-full max-w-xs sm:max-w-sm flex flex-col items-center">
+          <div className="w-full rounded-3xl p-6 sm:p-7 flex flex-col items-center" style={{
+            background: "#fff",
+            boxShadow: "0 24px 60px -12px rgba(15,23,41,0.12), 0 4px 14px rgba(15,23,41,0.04)",
+            border: `1px solid ${C.border}`,
+          }}>
+            <button onClick={() => { setSel(null); setPin(""); setErr(""); }}
+              className="flex items-center gap-1 text-xs font-semibold self-start mb-6" style={{ color: C.textMuted }}>
+              <ChevronLeft size={14} /> Volver
+            </button>
+
+            <div className="w-16 h-16 rounded-2xl flex items-center justify-center font-bold text-white text-xl mb-3"
+              style={{ background: sel.role === "admin" ? PREMIUM_GRADIENT : C.teal, boxShadow: `0 10px 24px ${sel.role === "admin" ? C.orange : C.teal}35` }}>
+              {sel.name.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase()}
+            </div>
+            <div className="font-bold text-base mb-1" style={{ fontFamily: FONT_DISPLAY, color: C.text }}>{sel.name}</div>
+            <div className="text-xs mb-7" style={{ color: C.textMuted }}>Ingresa tu PIN de 4 dígitos</div>
+
+            <div className="flex gap-3 mb-2">
+              {[0, 1, 2, 3].map(i => (
+                <div key={i} className="w-3.5 h-3.5 rounded-full transition-all"
+                  style={{ background: i < pin.length ? C.orange : "#E5E7EB", transform: i < pin.length ? "scale(1.1)" : "scale(1)" }} />
+              ))}
+            </div>
+            {err ? (
+              <p className="text-xs font-medium mb-3 text-center" style={{ color: C.danger }}>{err}</p>
+            ) : <div className="mb-3 h-4" />}
+
+            <div className="grid grid-cols-3 gap-3 w-full max-w-[240px]">
+              {["1", "2", "3", "4", "5", "6", "7", "8", "9", "", "0", "⌫"].map(d => (
+                <button key={d} onClick={() => d === "⌫" ? setPin(p => p.slice(0, -1)) : d !== "" ? digit(d) : null} disabled={d === ""}
+                  className="h-14 rounded-2xl font-bold text-lg disabled:opacity-0 transition-all active:scale-95"
+                  style={{
+                    background: d === "⌫" ? C.cream : "#fff", color: C.text,
+                    border: `1.5px solid ${C.border}`, fontFamily: FONT_MONO,
+                    boxShadow: d === "⌫" ? "none" : "0 2px 6px rgba(15,23,41,0.04)",
+                  }}>
+                  {d}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       )}
