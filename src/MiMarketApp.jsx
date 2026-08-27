@@ -874,13 +874,24 @@ function PanelView({ products, sales, fiados, profile, setView, currentUser }) {
 
 /* ============================== INVENTARIO ============================== */
 function ProductFormModal({ initial, onClose, onSave }) {
-  const [form, setForm] = useState(initial||{ name:"", format:"Unidad", category:CATEGORIES[0], salePrice:"", purchasePrice:"", stock:"", barcode:"", imageUrl:"", priceHistory:[] });
+  const [form, setForm] = useState(initial||{ name:"", format:"Unidad", unitsPerPackage:"", category:CATEGORIES[0], salePrice:"", purchasePrice:"", stock:"", barcode:"", imageUrl:"", priceHistory:[] });
   const isEdit = !!initial;
   return (
     <Modal title={isEdit?"Editar producto":"Ingresar producto"} onClose={onClose}>
       <div className="grid grid-cols-2 gap-4">
         <div className="col-span-2"><Field label="Nombre del producto"><input style={inputStyle} value={form.name} onChange={e=>setForm({...form,name:e.target.value})} placeholder="Ej: Agua Mineral 1.5L"/></Field></div>
-        <Field label="Formato"><select style={inputStyle} value={form.format} onChange={e=>setForm({...form,format:e.target.value})}><option>Unidad</option><option>Pack x6</option><option>Pack x12</option><option>Caja</option></select></Field>
+        <Field label="Formato">
+          <select style={inputStyle} value={form.format} onChange={e=>setForm({...form,format:e.target.value, unitsPerPackage: e.target.value==="Unidad" ? "" : form.unitsPerPackage})}>
+            <option>Unidad</option><option>Pack</option><option>Caja</option>
+          </select>
+        </Field>
+        {form.format !== "Unidad" ? (
+          <Field label={`¿Cuántas unidades trae el ${form.format.toLowerCase()}?`}>
+            <input type="number" min="1" style={inputStyle} value={form.unitsPerPackage||""} onChange={e=>setForm({...form,unitsPerPackage:e.target.value})} placeholder="Ej: 6, 12, 24..." />
+          </Field>
+        ) : (
+          <div />
+        )}
         <Field label="Categoría"><select style={inputStyle} value={form.category} onChange={e=>setForm({...form,category:e.target.value})}>{CATEGORIES.map(c=><option key={c}>{c}</option>)}</select></Field>
         <Field label="Precio de venta"><input type="number" style={inputStyle} value={form.salePrice} onChange={e=>setForm({...form,salePrice:e.target.value})} placeholder="0"/></Field>
         <Field label="Precio de compra"><input type="number" style={inputStyle} value={form.purchasePrice} onChange={e=>setForm({...form,purchasePrice:e.target.value})} placeholder="0"/></Field>
@@ -921,7 +932,7 @@ function InventarioView({ products, setProducts, showToast }) {
   const filtered = products.filter(p=>(cat==="Todas"||p.category===cat)&&p.name.toLowerCase().includes(search.toLowerCase()));
 
   function handleExport() {
-    const blob = new Blob(["Producto,Formato,Precio Venta,Precio Compra,Stock,Categoria\n"+products.map(p=>`${p.name},${p.format},${p.salePrice},${p.purchasePrice},${p.stock},${p.category}`).join("\n")],{type:"text/csv"});
+    const blob = new Blob(["Producto,Formato,Unidades por paquete,Precio Venta,Precio Compra,Stock,Categoria\n"+products.map(p=>`${p.name},${p.format},${p.unitsPerPackage||""},${p.salePrice},${p.purchasePrice},${p.stock},${p.category}`).join("\n")],{type:"text/csv"});
     const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="inventario.csv"; document.body.appendChild(a); a.click(); document.body.removeChild(a);
     showToast("Inventario descargado como CSV");
   }
@@ -958,7 +969,7 @@ function InventarioView({ products, setProducts, showToast }) {
                           <span className="font-medium" style={{color:C.text}}>{p.name}</span>
                         </div>
                       </td>
-                      <td className="px-4 py-3" style={{color:C.textMuted}}>{p.format}</td>
+                      <td className="px-4 py-3" style={{color:C.textMuted}}>{p.format}{p.unitsPerPackage ? ` (x${p.unitsPerPackage})` : ""}</td>
                       <td className="px-4 py-3 font-semibold" style={{fontFamily:FONT_MONO,color:C.text}}>{formatCLP(p.salePrice)}</td>
                       <td className="px-4 py-3" style={{fontFamily:FONT_MONO,color:C.textMuted}}>{formatCLP(p.purchasePrice)}</td>
                       <td className="px-4 py-3"><StockBadge stock={p.stock}/></td>
