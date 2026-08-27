@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from "react";
 import { supabase } from "./supabase";
+import { BarcodeDetector } from "barcode-detector";
 import {
   LayoutDashboard, Package, ShoppingCart, BarChart3, Wallet, Coins,
   Receipt, Settings, PlayCircle, Globe, MessageCircle, Search, Plus, Pencil,
@@ -898,10 +899,25 @@ function ProductFormModal({ initial, onClose, onSave }) {
         <Field label="Stock"><input type="number" style={inputStyle} value={form.stock} onChange={e=>setForm({...form,stock:e.target.value})} placeholder="0"/></Field>
         <Field label="Código de barra"><input style={inputStyle} value={form.barcode||""} onChange={e=>setForm({...form,barcode:e.target.value})} placeholder="Ej: 7802800019107"/></Field>
         <div className="col-span-2">
-          <Field label="URL de imagen (opcional)">
-            <input style={inputStyle} value={form.imageUrl||""} onChange={e=>setForm({...form,imageUrl:e.target.value})} placeholder="https://...imagen.jpg"/>
+          <Field label="Foto del producto">
+            <div className="flex items-center gap-3">
+              <label className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-sm cursor-pointer shrink-0"
+                style={{ background: C.orangeLight, color: C.orangeDark, border: `1.5px solid ${C.orange}30` }}>
+                <Camera size={16} />
+                Subir foto
+                <input type="file" accept="image/*" className="hidden" onChange={e=>{
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  const reader = new FileReader();
+                  reader.onload = ev => setForm(f=>({...f, imageUrl: ev.target.result}));
+                  reader.readAsDataURL(file);
+                }} />
+              </label>
+              {form.imageUrl && <img src={form.imageUrl} alt="preview" className="rounded-xl object-cover shrink-0" style={{width:44,height:44}} onError={e=>e.target.style.display="none"}/>}
+              {form.imageUrl && <button type="button" onClick={()=>setForm(f=>({...f,imageUrl:""}))} className="text-xs font-semibold" style={{color:C.danger}}>Quitar</button>}
+            </div>
+            <input style={{...inputStyle, marginTop:8}} value={form.imageUrl && form.imageUrl.startsWith("data:") ? "" : (form.imageUrl||"")} onChange={e=>setForm({...form,imageUrl:e.target.value})} placeholder="O pega una URL de imagen..." />
           </Field>
-          {form.imageUrl && <img src={form.imageUrl} alt="preview" className="mt-2 rounded-xl object-cover" style={{width:64,height:64}} onError={e=>e.target.style.display="none"}/>}
         </div>
       </div>
       <div className="flex justify-end gap-2 mt-6">
@@ -973,7 +989,7 @@ function InventarioView({ products, setProducts, showToast }) {
                       <td className="px-4 py-3 font-semibold" style={{fontFamily:FONT_MONO,color:C.text}}>{formatCLP(p.salePrice)}</td>
                       <td className="px-4 py-3" style={{fontFamily:FONT_MONO,color:C.textMuted}}>{formatCLP(p.purchasePrice)}</td>
                       <td className="px-4 py-3"><StockBadge stock={p.stock}/></td>
-                      <td className="px-4 py-3"><span className="px-2 py-1 rounded-md text-xs font-medium" style={{background:cs.bg,color:cs.fg}}>{p.category}</span></td>
+                      <td className="px-4 py-3"><span className="px-2 py-1 rounded-md text-xs font-bold" style={{background:cs.bg,color:cs.fg}}>{p.category}</span></td>
                       <td className="px-4 py-3"><div className="flex gap-1">
                         <button onClick={()=>{setEditing(p);setShowForm(true);}} className="p-1.5 rounded-lg hover:bg-black/5"><Pencil size={15} color={C.textMuted}/></button>
                         {p.priceHistory?.length>0 && <button onClick={()=>setPriceHistTarget(p)} className="p-1.5 rounded-lg hover:bg-black/5" title="Historial de precios"><History size={15} color={C.navy}/></button>}
@@ -1028,8 +1044,7 @@ function BarcodeScannerModal({ products, onClose, onFound }) {
   const [lastCode,setLastCode]= useState("");
 
   useEffect(()=>{
-    if (!("BarcodeDetector" in window)) { setStatus("unsupported"); return; }
-    const det = new window.BarcodeDetector({ formats:["ean_13","ean_8","upc_a","upc_e","code_128","code_39","qr_code"] });
+    const det = new BarcodeDetector({ formats:["ean_13","ean_8","upc_a","upc_e","code_128","code_39","qr_code"] });
     navigator.mediaDevices.getUserMedia({video:{facingMode:"environment"}}).then(stream=>{
       streamRef.current=stream;
       if (videoRef.current) {
@@ -2150,7 +2165,7 @@ function ContabilidadView({ sales, products, gastos, setGastos, proveedores, set
                   {gastos.map(g => (
                     <tr key={g.id} style={{ borderTop: `1px solid ${C.border}` }}>
                       <td className="px-4 py-3 text-xs" style={{ color: C.textMuted }}>{formatDate(g.fecha)}</td>
-                      <td className="px-4 py-3"><span className="px-2 py-1 rounded-md text-xs font-medium" style={{ background: C.orangeLight, color: C.orangeDark }}>{g.categoria}</span></td>
+                      <td className="px-4 py-3"><span className="px-2 py-1 rounded-md text-xs font-bold" style={{ background: C.orangeLight, color: C.orangeDark }}>{g.categoria}</span></td>
                       <td className="px-4 py-3" style={{ color: C.text }}>{g.descripcion}</td>
                       <td className="px-4 py-3 text-xs" style={{ color: C.textMuted }}>{g.proveedor || "—"}</td>
                       <td className="px-4 py-3 font-bold" style={{ fontFamily: FONT_MONO, color: C.danger }}>{formatCLP(g.monto)}</td>
