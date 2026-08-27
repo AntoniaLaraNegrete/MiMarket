@@ -874,12 +874,83 @@ function PanelView({ products, sales, fiados, profile, setView, currentUser }) {
 }
 
 /* ============================== INVENTARIO ============================== */
+function ProductFinancialPanel({ salePrice, purchasePrice, stock }) {
+  const sale = Number(salePrice) || 0;
+  const purchase = Number(purchasePrice) || 0;
+  const qty = Number(stock) || 0;
+  const hasData = sale > 0 && purchase > 0;
+  const profit = sale - purchase;
+  const marginPct = sale > 0 ? (profit / sale) * 100 : 0;
+  const markupPct = purchase > 0 ? (profit / purchase) * 100 : 0;
+  const totalInvestment = purchase * qty;
+  const totalPotentialProfit = profit * qty;
+  const isLoss = profit < 0;
+  const health = isLoss ? "loss" : marginPct < 15 ? "low" : marginPct < 35 ? "ok" : "great";
+  const healthCfg = {
+    loss:  { label: "⚠️ Estás perdiendo dinero con este precio", color: C.danger, bg: C.dangerLight },
+    low:   { label: "Margen bajo — considera ajustar el precio", color: C.amber,  bg: C.amberLight },
+    ok:    { label: "Margen saludable", color: C.teal,    bg: "#E0F2FE" },
+    great: { label: "🎉 Excelente margen", color: C.success, bg: C.successLight },
+  }[health];
+
+  return (
+    <div className="rounded-2xl p-5 sticky top-0" style={{ background: C.cream, border: `1px solid ${C.border}` }}>
+      <div className="flex items-center gap-2 mb-4">
+        <TrendingUp size={16} color={C.orange} />
+        <span className="text-sm font-bold" style={{ fontFamily: FONT_DISPLAY, color: C.text }}>Rentabilidad de este producto</span>
+      </div>
+
+      {!hasData ? (
+        <p className="text-xs leading-relaxed" style={{ color: C.textMuted }}>
+          Completa el <strong>precio de venta</strong> y el <strong>precio de compra</strong> para ver aquí cuánto ganas por cada unidad y el potencial de este producto.
+        </p>
+      ) : (
+        <div className="flex flex-col gap-4">
+          <div className="rounded-xl px-3 py-2.5" style={{ background: healthCfg.bg }}>
+            <span className="text-xs font-bold leading-tight" style={{ color: healthCfg.color }}>{healthCfg.label}</span>
+          </div>
+
+          <div>
+            <div className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: C.textMuted }}>Ganancia por unidad</div>
+            <div className="text-2xl font-bold mt-0.5" style={{ fontFamily: FONT_MONO, color: isLoss ? C.danger : C.text }}>{formatCLP(profit)}</div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-xl p-3" style={{ background: "#fff", border: `1px solid ${C.border}` }}>
+              <div className="text-[10px] font-semibold" style={{ color: C.textMuted }}>Margen</div>
+              <div className="text-base font-bold mt-0.5" style={{ fontFamily: FONT_MONO, color: C.text }}>{marginPct.toFixed(1)}%</div>
+            </div>
+            <div className="rounded-xl p-3" style={{ background: "#fff", border: `1px solid ${C.border}` }}>
+              <div className="text-[10px] font-semibold" style={{ color: C.textMuted }}>Sobre el costo</div>
+              <div className="text-base font-bold mt-0.5" style={{ fontFamily: FONT_MONO, color: C.text }}>{markupPct.toFixed(1)}%</div>
+            </div>
+          </div>
+
+          {qty > 0 && (
+            <div className="pt-3 flex flex-col gap-2" style={{ borderTop: `1px dashed ${C.border}` }}>
+              <div className="flex justify-between items-center text-xs">
+                <span style={{ color: C.textMuted }}>Inversión en este stock ({qty} un.)</span>
+                <span className="font-semibold" style={{ fontFamily: FONT_MONO, color: C.text }}>{formatCLP(totalInvestment)}</span>
+              </div>
+              <div className="flex justify-between items-center text-xs">
+                <span style={{ color: C.textMuted }}>Ganancia potencial total</span>
+                <span className="font-bold" style={{ fontFamily: FONT_MONO, color: isLoss ? C.danger : C.success }}>{formatCLP(totalPotentialProfit)}</span>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ProductFormModal({ initial, onClose, onSave }) {
   const [form, setForm] = useState(initial||{ name:"", format:"Unidad", unitsPerPackage:"", category:CATEGORIES[0], salePrice:"", purchasePrice:"", stock:"", barcode:"", imageUrl:"", priceHistory:[] });
   const isEdit = !!initial;
   return (
-    <Modal title={isEdit?"Editar producto":"Ingresar producto"} onClose={onClose}>
-      <div className="grid grid-cols-2 gap-4">
+    <Modal title={isEdit?"Editar producto":"Ingresar producto"} onClose={onClose} width={860}>
+      <div className="flex flex-col lg:flex-row gap-6 items-start">
+        <div className="flex-1 w-full grid grid-cols-2 gap-4">
         <div className="col-span-2"><Field label="Nombre del producto"><input style={inputStyle} value={form.name} onChange={e=>setForm({...form,name:e.target.value})} placeholder="Ej: Agua Mineral 1.5L"/></Field></div>
         <Field label="Formato">
           <select style={inputStyle} value={form.format} onChange={e=>setForm({...form,format:e.target.value, unitsPerPackage: e.target.value==="Unidad" ? "" : form.unitsPerPackage})}>
@@ -918,6 +989,10 @@ function ProductFormModal({ initial, onClose, onSave }) {
             </div>
             <input style={{...inputStyle, marginTop:8}} value={form.imageUrl && form.imageUrl.startsWith("data:") ? "" : (form.imageUrl||"")} onChange={e=>setForm({...form,imageUrl:e.target.value})} placeholder="O pega una URL de imagen..." />
           </Field>
+        </div>
+        </div>
+        <div className="w-full lg:w-[300px] shrink-0">
+          <ProductFinancialPanel salePrice={form.salePrice} purchasePrice={form.purchasePrice} stock={form.stock} />
         </div>
       </div>
       <div className="flex justify-end gap-2 mt-6">
