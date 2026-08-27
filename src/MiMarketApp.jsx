@@ -88,6 +88,31 @@ const CATEGORY_STYLES = {
 };
 const CATEGORIES = Object.keys(CATEGORY_STYLES);
 
+// Paleta de respaldo para categorías nuevas que el cliente cree (sin estilo predefinido)
+const CUSTOM_CATEGORY_PALETTE = [
+  { bg: "#DBEAFE", fg: "#2563EB", emoji: "🏷️" },
+  { bg: "#FCE7F3", fg: "#DB2777", emoji: "✨" },
+  { bg: "#D1FAE5", fg: "#059669", emoji: "🔖" },
+  { bg: "#FEF3C7", fg: "#B45309", emoji: "📦" },
+  { bg: "#F3E8FF", fg: "#9333EA", emoji: "🎯" },
+  { bg: "#DCFCE7", fg: "#15803D", emoji: "💠" },
+  { bg: "#E0F2FE", fg: "#0369A1", emoji: "🔶" },
+  { bg: "#FFE4E6", fg: "#E11D48", emoji: "🔷" },
+];
+function styleForCategory(name) {
+  if (CATEGORY_STYLES[name]) return CATEGORY_STYLES[name];
+  let hash = 0;
+  for (let i = 0; i < (name || "").length; i++) hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
+  return CUSTOM_CATEGORY_PALETTE[hash % CUSTOM_CATEGORY_PALETTE.length];
+}
+// Devuelve la lista de categorías activas del negocio: las que el cliente personalizó,
+// o si nunca las tocó, las sugeridas según su tipo de negocio, o el set genérico.
+function activeCategories(profile) {
+  if (profile?.categories?.length) return profile.categories;
+  const bt = BUSINESS_TYPES.find(b => b.id === profile?.type);
+  return bt?.categories?.length ? bt.categories : CATEGORIES;
+}
+
 /* ============================== TIPOS DE NEGOCIO Y MÓDULOS ============================== */
 const MODULES = [
   { id: "inventario", label: "Inventario y ventas", desc: "Stock de productos y punto de venta", icon: Package },
@@ -944,8 +969,9 @@ function ProductFinancialPanel({ salePrice, purchasePrice, stock }) {
   );
 }
 
-function ProductFormModal({ initial, onClose, onSave }) {
-  const [form, setForm] = useState(initial||{ name:"", format:"Unidad", unitsPerPackage:"", category:CATEGORIES[0], salePrice:"", purchasePrice:"", stock:"", barcode:"", imageUrl:"", priceHistory:[] });
+function ProductFormModal({ initial, categories, onClose, onSave }) {
+  const cats = categories && categories.length ? categories : CATEGORIES;
+  const [form, setForm] = useState(initial||{ name:"", format:"Unidad", unitsPerPackage:"", category:cats[0], salePrice:"", purchasePrice:"", stock:"", barcode:"", imageUrl:"", priceHistory:[] });
   const isEdit = !!initial;
   return (
     <Modal title={isEdit?"Editar producto":"Ingresar producto"} onClose={onClose} width={860}>
@@ -964,7 +990,7 @@ function ProductFormModal({ initial, onClose, onSave }) {
         ) : (
           <div />
         )}
-        <Field label="Categoría"><select style={inputStyle} value={form.category} onChange={e=>setForm({...form,category:e.target.value})}>{CATEGORIES.map(c=><option key={c}>{c}</option>)}</select></Field>
+        <Field label="Categoría"><select style={inputStyle} value={form.category} onChange={e=>setForm({...form,category:e.target.value})}>{cats.map(c=><option key={c}>{c}</option>)}</select></Field>
         <Field label="Precio de venta"><input type="number" style={inputStyle} value={form.salePrice} onChange={e=>setForm({...form,salePrice:e.target.value})} placeholder="0"/></Field>
         <Field label="Precio de compra"><input type="number" style={inputStyle} value={form.purchasePrice} onChange={e=>setForm({...form,purchasePrice:e.target.value})} placeholder="0"/></Field>
         <Field label="Stock"><input type="number" style={inputStyle} value={form.stock} onChange={e=>setForm({...form,stock:e.target.value})} placeholder="0"/></Field>
@@ -1012,7 +1038,8 @@ function ProductFormModal({ initial, onClose, onSave }) {
   );
 }
 
-function InventarioView({ products, setProducts, showToast }) {
+function InventarioView({ products, setProducts, showToast, profile }) {
+  const categories = activeCategories(profile);
   const [search, setSearch] = useState("");
   const [cat,    setCat]    = useState("Todas");
   const [editing,setEditing]= useState(null);
@@ -1041,7 +1068,7 @@ function InventarioView({ products, setProducts, showToast }) {
           <input style={{...inputStyle,paddingLeft:34}} placeholder="Buscar producto..." value={search} onChange={e=>setSearch(e.target.value)}/>
         </div>
         <select style={{...inputStyle,width:200}} value={cat} onChange={e=>setCat(e.target.value)}>
-          <option>Todas</option>{CATEGORIES.map(c=><option key={c}>{c}</option>)}
+          <option>Todas</option>{categories.map(c=><option key={c}>{c}</option>)}
         </select>
       </div>
       <Card style={{overflow:"hidden"}}>
@@ -1051,7 +1078,7 @@ function InventarioView({ products, setProducts, showToast }) {
               <thead><tr style={{background:C.cream}}>{["Producto","Formato","Precio venta","Precio compra","Stock","Categoría","Acciones"].map(h=><th key={h} className="text-left px-4 py-3 font-semibold text-xs" style={{color:C.textMuted}}>{h}</th>)}</tr></thead>
               <tbody>
                 {filtered.map(p=>{
-                  const cs=CATEGORY_STYLES[p.category];
+                  const cs=styleForCategory(p.category);
                   return (
                     <tr key={p.id} style={{borderTop:`1px solid ${C.border}`}}>
                       <td className="px-4 py-3">
@@ -1078,7 +1105,7 @@ function InventarioView({ products, setProducts, showToast }) {
           </div>
         )}
       </Card>
-      {showForm && <ProductFormModal initial={editing} onClose={()=>setShowForm(false)} onSave={data=>{ if(editing) setProducts(products.map(p=>p.id===editing.id?{...p,...data}:p)); else setProducts([{id:uid("p"),...data},...products]); showToast(editing?"Producto actualizado":"Producto agregado"); setShowForm(false); }}/>}
+      {showForm && <ProductFormModal initial={editing} categories={categories} onClose={()=>setShowForm(false)} onSave={data=>{ if(editing) setProducts(products.map(p=>p.id===editing.id?{...p,...data}:p)); else setProducts([{id:uid("p"),...data},...products]); showToast(editing?"Producto actualizado":"Producto agregado"); setShowForm(false); }}/>}
       {delTarget && (
         <Modal title="Eliminar producto" onClose={()=>setDelTarget(null)} width={400}>
           <p className="text-sm" style={{color:C.text}}>¿Seguro que quieres eliminar <strong>{delTarget.name}</strong>? Esta acción no se puede deshacer.</p>
@@ -1170,7 +1197,7 @@ function BarcodeScannerModal({ products, onClose, onFound }) {
         {status==="found"&&found&&(
           <div className="w-full rounded-xl p-4" style={{background:C.successLight,border:`1px solid ${C.success}30`}}>
             <div className="flex items-center gap-3">
-              <div className="text-3xl">{CATEGORY_STYLES[found.category]?.emoji}</div>
+              <div className="text-3xl">{styleForCategory(found.category)?.emoji}</div>
               <div className="flex-1"><div className="font-bold text-sm" style={{color:C.text}}>{found.name}</div><div className="text-xs mt-0.5" style={{color:C.textMuted}}>{formatCLP(found.salePrice)} · Stock: {found.stock}</div></div>
             </div>
           </div>
@@ -1349,7 +1376,7 @@ function VentaView({ products, setProducts, cart, setCart, fiados, setFiados, sa
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3">
           {filtered.map(p=>{
-            const cs=CATEGORY_STYLES[p.category]; const inCart=cart.find(c=>c.productId===p.id)?.qty||0;
+            const cs=styleForCategory(p.category); const inCart=cart.find(c=>c.productId===p.id)?.qty||0;
             return (
               <button key={p.id} onClick={()=>addToCart(p)} disabled={p.stock===0}
                 className="text-left p-3 rounded-2xl relative disabled:opacity-40 transition hover:shadow-md"
@@ -1749,7 +1776,22 @@ function ConfigurarView({ profile, setProfile, showToast, users, currentUser, on
   const [tab,setTab]=useState("perfil");
   const [form,setForm]=useState(profile);
   const [newUser,setNewUser]=useState({name:"",pin:"",role:"vendedor"});
-  const tabs=[{id:"perfil",label:"Perfil del negocio",icon:Store},{id:"sucursales",label:"Sucursales",icon:Building2},{id:"usuarios",label:"Usuarios",icon:Users},{id:"impresion",label:"Impresión",icon:Printer},{id:"logo",label:"Logo",icon:ImageIcon,premium:true},{id:"categorias",label:"Categorías",icon:Shapes,premium:true}];
+  const [newCat,setNewCat]=useState("");
+  const [catToDelete,setCatToDelete]=useState(null);
+  const currentCategories = activeCategories(profile);
+  function addCategory() {
+    const name = newCat.trim();
+    if (!name) return;
+    if (currentCategories.some(c=>c.toLowerCase()===name.toLowerCase())) { showToast("Esa categoría ya existe","error"); return; }
+    setProfile({...profile, categories:[...currentCategories, name]});
+    setNewCat("");
+  }
+  function confirmDeleteCategory() {
+    setProfile({...profile, categories: currentCategories.filter(c=>c!==catToDelete)});
+    setCatToDelete(null);
+    showToast("Categoría eliminada");
+  }
+  const tabs=[{id:"perfil",label:"Perfil del negocio",icon:Store},{id:"sucursales",label:"Sucursales",icon:Building2},{id:"usuarios",label:"Usuarios",icon:Users},{id:"impresion",label:"Impresión",icon:Printer},{id:"logo",label:"Logo",icon:ImageIcon,premium:true},{id:"categorias",label:"Categorías",icon:Shapes}];
 
   return (
     <div>
@@ -1825,16 +1867,53 @@ function ConfigurarView({ profile, setProfile, showToast, users, currentUser, on
             <><h3 className="font-bold mb-4" style={{fontFamily:FONT_DISPLAY,color:C.text}}>Impresión</h3>
             <Field label="Tipo de impresora"><select style={inputStyle}><option>Térmica 80mm</option><option>Térmica 58mm</option><option>PDF / Sin impresora</option></select></Field></>
           )}
-          {(tab==="logo"||tab==="categorias")&&(
+          {tab==="logo"&&(
             <div className="flex flex-col items-center text-center py-10">
               <div className="w-12 h-12 rounded-full flex items-center justify-center mb-3" style={{background:C.orangeLight}}><Lock size={20} color={C.orangeDark}/></div>
               <p className="font-semibold text-sm mb-1" style={{color:C.text}}>Función Premium</p>
-              <p className="text-xs mb-4" style={{color:C.textMuted,maxWidth:280}}>Sube tu logo y crea categorías personalizadas con el plan Premium.</p>
+              <p className="text-xs mb-4" style={{color:C.textMuted,maxWidth:280}}>Sube tu logo con el plan Premium.</p>
               <Btn>Conocer planes</Btn>
             </div>
           )}
+          {tab==="categorias"&&(
+            <>
+              <h3 className="font-bold mb-1" style={{fontFamily:FONT_DISPLAY,color:C.text}}>Categorías de productos</h3>
+              <p className="text-xs mb-5" style={{color:C.textMuted}}>Crea tus propias categorías o elimina las que no uses. Se aplican en todo tu inventario y punto de venta.</p>
+              <div className="flex flex-wrap gap-2 mb-5">
+                {currentCategories.map(c=>{
+                  const cs = styleForCategory(c);
+                  return (
+                    <div key={c} className="flex items-center gap-2 pl-3 pr-2 py-1.5 rounded-full text-xs font-bold" style={{background:cs.bg,color:cs.fg}}>
+                      <span>{cs.emoji} {c}</span>
+                      <button type="button" onClick={()=>setCatToDelete(c)} className="w-4 h-4 rounded-full flex items-center justify-center hover:opacity-70" style={{background:"rgba(0,0,0,0.12)"}}>
+                        <X size={10} color={cs.fg}/>
+                      </button>
+                    </div>
+                  );
+                })}
+                {currentCategories.length===0 && <p className="text-xs" style={{color:C.textMuted}}>Aún no tienes categorías. Agrega la primera abajo.</p>}
+              </div>
+              <div className="flex gap-2 max-w-sm">
+                <input style={inputStyle} value={newCat} onChange={e=>setNewCat(e.target.value)} placeholder="Ej: Congelados" onKeyDown={e=>{if(e.key==="Enter")addCategory();}} />
+                <Btn icon={Plus} onClick={addCategory}>Agregar</Btn>
+              </div>
+            </>
+          )}
         </Card>
       </div>
+      {catToDelete && (
+        <Modal title="Eliminar categoría" onClose={()=>setCatToDelete(null)} width={360}>
+          <div className="flex flex-col items-center text-center gap-3 py-2">
+            <div className="w-12 h-12 rounded-full flex items-center justify-center" style={{background:C.dangerLight}}><AlertTriangle size={20} color={C.danger}/></div>
+            <p className="text-sm" style={{color:C.text}}>¿Deseas borrar la categoría <strong>"{catToDelete}"</strong>?</p>
+            <p className="text-xs" style={{color:C.textMuted}}>Los productos que ya la tenían asignada no se eliminan, solo dejarán de tener esa categoría en la lista.</p>
+            <div className="flex gap-2 w-full mt-2">
+              <Btn full variant="ghost" onClick={()=>setCatToDelete(null)}>No</Btn>
+              <Btn full variant="dark" onClick={confirmDeleteCategory}>Sí, borrar</Btn>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
@@ -2528,6 +2607,7 @@ function OnboardingWizard({ onComplete, profile, setProfile, setProducts }) {
   const [step, setStep] = useState(1);
   const [biz, setBiz] = useState({ name: profile.name, rut: profile.rut, address: profile.address, comuna: profile.comuna, region: profile.region, type: profile.type || "minimarket", modules: profile.modules || ["inventario"] });
   const [prod, setProd] = useState({ name: "", format: "Unidad", category: CATEGORIES[0], salePrice: "", purchasePrice: "", stock: "" });
+  const onboardingCategories = activeCategories(biz);
 
   const STEPS = [
     { n: 1, label: "Tu negocio" },
@@ -2639,7 +2719,7 @@ function OnboardingWizard({ onComplete, profile, setProfile, setProducts }) {
                 </Field>
                 <Field label="Categoría">
                   <select style={inputStyle} value={prod.category} onChange={e => setProd({ ...prod, category: e.target.value })}>
-                    {CATEGORIES.map(c => <option key={c}>{c}</option>)}
+                    {onboardingCategories.map(c => <option key={c}>{c}</option>)}
                   </select>
                 </Field>
                 <Field label="Precio de compra ($)">
@@ -2706,7 +2786,7 @@ export default function App({ session, onLogout, isOwner, onOpenAdmin }) {
   const [proveedores, setProveedores] = useState([]);
   const [counters,    setCounters]    = useState({ voucher: 1000, boleta: 8800 });
   const [cajaState,   setCajaState]   = useState({ isOpen: false, openedAt: new Date().toISOString(), openingAmount: 0 });
-  const [profile,     setProfile]     = useState({ name: "Mi Minimarket", rut: "", address: "", comuna: "", region: "", size: "50 a 100 metros cuadrados", type: "minimarket", modules: ["inventario"] });
+  const [profile,     setProfile]     = useState({ name: "Mi Minimarket", rut: "", address: "", comuna: "", region: "", size: "50 a 100 metros cuadrados", type: "minimarket", modules: ["inventario"], categories: [] });
   const [profileLoaded, setProfileLoaded] = useState(false);
 
   // Cargar el perfil del negocio guardado en Supabase al entrar
@@ -2722,7 +2802,7 @@ export default function App({ session, onLogout, isOwner, onOpenAdmin }) {
         setProfile({
           name: data.name || "Mi Minimarket", rut: data.rut || "", address: data.address || "",
           comuna: data.comuna || "", region: data.region || "", size: data.size || "50 a 100 metros cuadrados",
-          type: data.type || "minimarket", modules: data.modules || ["inventario"],
+          type: data.type || "minimarket", modules: data.modules || ["inventario"], categories: data.categories || [],
         });
       }
       setProfileLoaded(true);
@@ -2737,7 +2817,7 @@ export default function App({ session, onLogout, isOwner, onOpenAdmin }) {
         user_id: session.user.id,
         email: session.user.email,
         name: profile.name, rut: profile.rut, address: profile.address, comuna: profile.comuna,
-        region: profile.region, size: profile.size, type: profile.type, modules: profile.modules,
+        region: profile.region, size: profile.size, type: profile.type, modules: profile.modules, categories: profile.categories || [],
         updated_at: new Date().toISOString(),
       }, { onConflict: "user_id" }).then(({ error }) => {
         if (error) console.error("Error guardando perfil del negocio:", error);
@@ -2800,7 +2880,7 @@ export default function App({ session, onLogout, isOwner, onOpenAdmin }) {
   const content = (
     <div className="p-4 md:p-7" style={{ paddingBottom: isTablet ? 100 : 32 }}>
       {view === "panel"      && currentUser.role === "admin" && <PanelView products={products} sales={sales} fiados={fiados} profile={profile} setView={setView} currentUser={currentUser} />}
-      {view === "inventario" && currentUser.role === "admin" && <InventarioView products={products} setProducts={setProducts} showToast={showToast} />}
+      {view === "inventario" && currentUser.role === "admin" && <InventarioView products={products} setProducts={setProducts} showToast={showToast} profile={profile} />}
       {view === "venta"                                       && <VentaView {...viewProps} />}
       {view === "reporte"    && currentUser.role === "admin" && <ReporteView sales={sales} products={products} />}
       {view === "contabilidad" && currentUser.role === "admin" && <ContabilidadView sales={sales} products={products} gastos={gastos} setGastos={setGastos} proveedores={proveedores} setProveedores={setProveedores} fiados={fiados} showToast={showToast} />}
