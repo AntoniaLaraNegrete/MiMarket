@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from "react";
+import { supabase } from "./supabase";
 import {
   LayoutDashboard, Package, ShoppingCart, BarChart3, Wallet, Coins,
   Receipt, Settings, PlayCircle, Globe, MessageCircle, Search, Plus, Pencil,
@@ -72,16 +73,88 @@ const SIDEBAR_W = 240;
 
 /* ============================== DATA ============================== */
 const CATEGORY_STYLES = {
-  "Bebidas":           { bg: "#DBEAFE", fg: "#2563EB", emoji: "🥤" },
-  "Snacks y Confites": { bg: "#FCE7F3", fg: "#DB2777", emoji: "🍬" },
-  "Limpieza":          { bg: "#D1FAE5", fg: "#059669", emoji: "🧴" },
-  "Lácteos":           { bg: "#E9ECEF", fg: "#D97706", emoji: "🥛" },
-  "Panadería":         { bg: "#F1F3F5", fg: "#EA580C", emoji: "🍞" },
-  "Abarrotes":         { bg: "#F0FDF4", fg: "#16A34A", emoji: "🥫" },
-  "Cuidado Personal":  { bg: "#F3E8FF", fg: "#9333EA", emoji: "🧼" },
-  "Frutas y Verduras": { bg: "#DCFCE7", fg: "#15803D", emoji: "🥕" },
+  "Bebidas":            { bg: "#DBEAFE", fg: "#2563EB", emoji: "🥤" },
+  "Snacks y Confites":  { bg: "#FCE7F3", fg: "#DB2777", emoji: "🍬" },
+  "Limpieza":           { bg: "#D1FAE5", fg: "#059669", emoji: "🧴" },
+  "Lácteos":            { bg: "#E9ECEF", fg: "#D97706", emoji: "🥛" },
+  "Panadería":          { bg: "#F1F3F5", fg: "#EA580C", emoji: "🍞" },
+  "Abarrotes":          { bg: "#F0FDF4", fg: "#16A34A", emoji: "🥫" },
+  "Cuidado Personal":   { bg: "#F3E8FF", fg: "#9333EA", emoji: "🧼" },
+  "Frutas y Verduras":  { bg: "#DCFCE7", fg: "#15803D", emoji: "🥕" },
+  "Cervezas y Licores": { bg: "#FEF3C7", fg: "#B45309", emoji: "🍺" },
+  "Mascotas":           { bg: "#FFE4E6", fg: "#E11D48", emoji: "🐾" },
+  "Papelería y Útiles": { bg: "#E0F2FE", fg: "#0369A1", emoji: "✏️" },
 };
 const CATEGORIES = Object.keys(CATEGORY_STYLES);
+
+/* ============================== TIPOS DE NEGOCIO Y MÓDULOS ============================== */
+const MODULES = [
+  { id: "inventario", label: "Inventario y ventas", desc: "Stock de productos y punto de venta", icon: Package },
+  { id: "pedidos",     label: "Pedidos a solicitud",  desc: "Catálogo personalizado con fecha de entrega", icon: Truck },
+  { id: "agenda",      label: "Agenda de servicios",  desc: "Calendario de horas y tratamientos", icon: Clock },
+];
+
+const BUSINESS_TYPES = [
+  { id: "minimarket", label: "Minimarket / Almacén",         emoji: "🏪", modules: ["inventario"],           categories: ["Bebidas", "Snacks y Confites", "Limpieza", "Lácteos", "Abarrotes", "Cuidado Personal"] },
+  { id: "botilleria", label: "Botillería",                   emoji: "🍾", modules: ["inventario"],           categories: ["Cervezas y Licores", "Bebidas", "Snacks y Confites"] },
+  { id: "petshop",    label: "Petshop",                      emoji: "🐾", modules: ["inventario"],           categories: ["Mascotas", "Cuidado Personal"] },
+  { id: "verduleria", label: "Verdulería / Frutería",        emoji: "🥕", modules: ["inventario"],           categories: ["Frutas y Verduras"] },
+  { id: "libreria",   label: "Librería / Papelería",         emoji: "📚", modules: ["inventario"],           categories: ["Papelería y Útiles"] },
+  { id: "panaderia",  label: "Panadería / Pastelería",       emoji: "🥐", modules: ["inventario", "pedidos"], categories: ["Panadería", "Abarrotes", "Bebidas"] },
+  { id: "salon",      label: "Salón de belleza / Servicios", emoji: "💇", modules: ["agenda"],                categories: [] },
+  { id: "otro",       label: "Otro / Personalizado",         emoji: "✨", modules: ["inventario"],           categories: [] },
+];
+
+function BusinessTypeSelector({ typeId, modules, onChangeType, onToggleModule }) {
+  return (
+    <div>
+      <span className="block text-xs font-semibold mb-2" style={{ color: C.textMuted }}>Tipo de negocio</span>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-6">
+        {BUSINESS_TYPES.map(bt => {
+          const active = typeId === bt.id;
+          return (
+            <button key={bt.id} type="button" onClick={() => onChangeType(bt)}
+              className="flex flex-col items-center gap-1.5 p-3 rounded-2xl text-center transition-all"
+              style={{
+                border: `1.5px solid ${active ? C.orange : C.border}`,
+                background: active ? C.orangeLight : "#fff",
+              }}>
+              <span className="text-2xl leading-none">{bt.emoji}</span>
+              <span className="text-[11px] font-semibold leading-tight" style={{ color: active ? C.orangeDark : C.text }}>{bt.label}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      <span className="block text-xs font-semibold mb-2" style={{ color: C.textMuted }}>¿Qué necesita tu negocio?</span>
+      <p className="text-[11px] mb-3" style={{ color: C.textMuted }}>Puedes activar más de uno. Lo sugerimos según el tipo elegido, pero tú decides.</p>
+      <div className="flex flex-col gap-2">
+        {MODULES.map(m => {
+          const Icon = m.icon;
+          const active = modules.includes(m.id);
+          return (
+            <button key={m.id} type="button" onClick={() => onToggleModule(m.id)}
+              className="flex items-center gap-3 p-3 rounded-xl text-left transition-all"
+              style={{ border: `1.5px solid ${active ? C.orange : C.border}`, background: active ? C.orangeLight : "#fff" }}>
+              <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
+                style={{ background: active ? C.orange : C.cream }}>
+                <Icon size={16} color={active ? "#fff" : C.textMuted} />
+              </div>
+              <div className="flex-1">
+                <div className="text-sm font-semibold" style={{ color: C.text }}>{m.label}</div>
+                <div className="text-xs" style={{ color: C.textMuted }}>{m.desc}</div>
+              </div>
+              <div className="w-5 h-5 rounded-full flex items-center justify-center shrink-0"
+                style={{ border: `2px solid ${active ? C.orange : C.border}`, background: active ? C.orange : "transparent" }}>
+                {active && <Check size={12} color="#fff" />}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 const SEED_PRODUCTS = [
   { name: "Agua Mineral 1.5L",        format: "Unidad",   salePrice: 1200, purchasePrice: 800,  stock: 24, category: "Bebidas",           barcode: "7802800019107" },
@@ -1601,8 +1674,17 @@ function ConfigurarView({ profile, setProfile, showToast, users, currentUser, on
                 <Field label="Comuna"><input style={inputStyle} value={form.comuna} onChange={e=>setForm({...form,comuna:e.target.value})}/></Field>
                 <Field label="Región"><input style={inputStyle} value={form.region} onChange={e=>setForm({...form,region:e.target.value})}/></Field>
                 <Field label="Tamaño"><input style={inputStyle} value={form.size} onChange={e=>setForm({...form,size:e.target.value})}/></Field>
-                <Field label="Tipo"><select style={inputStyle} value={form.type} onChange={e=>setForm({...form,type:e.target.value})}><option>Almacén de barrio</option><option>Minimarket</option><option>Botillería</option><option>Despensa</option></select></Field>
               </div>
+
+              <div className="mt-5">
+                <BusinessTypeSelector
+                  typeId={form.type || "minimarket"}
+                  modules={form.modules || ["inventario"]}
+                  onChangeType={bt => setForm({ ...form, type: bt.id, modules: bt.modules })}
+                  onToggleModule={mid => setForm(f => { const cur = f.modules || ["inventario"]; return { ...f, modules: cur.includes(mid) ? cur.filter(x => x !== mid) : [...cur, mid] }; })}
+                />
+              </div>
+
               <div className="flex justify-end mt-6"><Btn icon={Check} onClick={()=>{setProfile(form);showToast("Perfil actualizado");}}>Guardar cambios</Btn></div>
             </>
           )}
@@ -2343,7 +2425,7 @@ function ContabilidadView({ sales, products, gastos, setGastos, proveedores, set
 
 function OnboardingWizard({ onComplete, profile, setProfile, setProducts }) {
   const [step, setStep] = useState(1);
-  const [biz, setBiz] = useState({ name: profile.name, rut: profile.rut, address: profile.address, comuna: profile.comuna, region: profile.region, type: profile.type });
+  const [biz, setBiz] = useState({ name: profile.name, rut: profile.rut, address: profile.address, comuna: profile.comuna, region: profile.region, type: profile.type || "minimarket", modules: profile.modules || ["inventario"] });
   const [prod, setProd] = useState({ name: "", format: "Unidad", category: CATEGORIES[0], salePrice: "", purchasePrice: "", stock: "" });
 
   const STEPS = [
@@ -2402,11 +2484,6 @@ function OnboardingWizard({ onComplete, profile, setProfile, setProducts }) {
                 <Field label="RUT del negocio">
                   <input style={inputStyle} value={biz.rut} onChange={e => setBiz({ ...biz, rut: e.target.value })} placeholder="Ej: 76.543.210-1" />
                 </Field>
-                <Field label="Tipo de negocio">
-                  <select style={inputStyle} value={biz.type} onChange={e => setBiz({ ...biz, type: e.target.value })}>
-                    <option>Almacén de barrio</option><option>Minimarket</option><option>Botillería</option><option>Despensa</option>
-                  </select>
-                </Field>
                 <div className="col-span-2">
                   <Field label="Dirección">
                     <input style={inputStyle} value={biz.address} onChange={e => setBiz({ ...biz, address: e.target.value })} placeholder="Ej: Av. Libertad 482, Local 2" />
@@ -2419,9 +2496,23 @@ function OnboardingWizard({ onComplete, profile, setProfile, setProducts }) {
                   <input style={inputStyle} value={biz.region} onChange={e => setBiz({ ...biz, region: e.target.value })} placeholder="Ej: Valparaíso" />
                 </Field>
               </div>
+
+              <div className="mt-5">
+                <BusinessTypeSelector
+                  typeId={biz.type}
+                  modules={biz.modules}
+                  onChangeType={bt => setBiz({ ...biz, type: bt.id, modules: bt.modules })}
+                  onToggleModule={mid => setBiz(b => ({ ...b, modules: b.modules.includes(mid) ? b.modules.filter(x => x !== mid) : [...b.modules, mid] }))}
+                />
+              </div>
+
               <div className="flex justify-between mt-6">
                 <Btn variant="ghost" onClick={onComplete}>Saltar por ahora</Btn>
-                <Btn disabled={!biz.name.trim()} onClick={() => setStep(2)}>
+                <Btn disabled={!biz.name.trim()} onClick={() => {
+                  const bt = BUSINESS_TYPES.find(b => b.id === biz.type);
+                  if (bt?.categories?.[0]) setProd(p => ({ ...p, category: bt.categories[0] }));
+                  setStep(2);
+                }}>
                   Siguiente <ChevronRight size={16} />
                 </Btn>
               </div>
@@ -2514,7 +2605,46 @@ export default function App({ session, onLogout, isOwner, onOpenAdmin }) {
   const [proveedores, setProveedores] = useState([]);
   const [counters,    setCounters]    = useState({ voucher: 1000, boleta: 8800 });
   const [cajaState,   setCajaState]   = useState({ isOpen: false, openedAt: new Date().toISOString(), openingAmount: 0 });
-  const [profile,     setProfile]     = useState({ name: "Mi Minimarket", rut: "", address: "", comuna: "", region: "", size: "50 a 100 metros cuadrados", type: "Almacén de barrio" });
+  const [profile,     setProfile]     = useState({ name: "Mi Minimarket", rut: "", address: "", comuna: "", region: "", size: "50 a 100 metros cuadrados", type: "minimarket", modules: ["inventario"] });
+  const [profileLoaded, setProfileLoaded] = useState(false);
+
+  // Cargar el perfil del negocio guardado en Supabase al entrar
+  useEffect(() => {
+    if (!session?.user?.id) { setProfileLoaded(true); return; }
+    (async () => {
+      const { data, error } = await supabase
+        .from("perfiles_negocio")
+        .select("*")
+        .eq("user_id", session.user.id)
+        .maybeSingle();
+      if (!error && data) {
+        setProfile({
+          name: data.name || "Mi Minimarket", rut: data.rut || "", address: data.address || "",
+          comuna: data.comuna || "", region: data.region || "", size: data.size || "50 a 100 metros cuadrados",
+          type: data.type || "minimarket", modules: data.modules || ["inventario"],
+        });
+      }
+      setProfileLoaded(true);
+    })();
+  }, [session?.user?.id]);
+
+  // Guardar el perfil en Supabase cada vez que cambie (con pequeño debounce)
+  useEffect(() => {
+    if (!profileLoaded || !session?.user?.id) return;
+    const t = setTimeout(() => {
+      supabase.from("perfiles_negocio").upsert({
+        user_id: session.user.id,
+        email: session.user.email,
+        name: profile.name, rut: profile.rut, address: profile.address, comuna: profile.comuna,
+        region: profile.region, size: profile.size, type: profile.type, modules: profile.modules,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: "user_id" }).then(({ error }) => {
+        if (error) console.error("Error guardando perfil del negocio:", error);
+      });
+    }, 600);
+    return () => clearTimeout(t);
+  }, [profile, profileLoaded, session?.user?.id]);
+
   const [toast,       setToast]       = useState(null);
   const [onboarding,  setOnboarding]  = useState(false);
   const isTablet = useIsTablet();
@@ -2547,21 +2677,23 @@ export default function App({ session, onLogout, isOwner, onOpenAdmin }) {
     @keyframes scan { 0%,100%{top:10%} 50%{top:80%} }
   `;
 
-  if (!currentUser) {
-    if (users.length === 0) {
-      return (
-        <div style={{ fontFamily: FONT_BODY }}>
-          <style>{STYLES}</style>
-          <CreateAccountScreen onCreated={u => {
-            setUsers([u]);
-            setCurrentUser(u);
-            setOnboarding(true);
-            setView("panel");
-          }} />
-        </div>
-      );
+  // Entra directo con tu cuenta (correo/contraseña) — ya no pide PIN aparte
+  useEffect(() => {
+    if (!currentUser && session?.user) {
+      const nombre = session.user.email ? session.user.email.split("@")[0] : "Admin";
+      const u = { id: session.user.id, name: nombre.charAt(0).toUpperCase() + nombre.slice(1), role: "admin" };
+      setUsers([u]);
+      setCurrentUser(u);
+      if (products.length === 0) setOnboarding(true);
     }
-    return <div style={{ fontFamily: FONT_BODY }}><style>{STYLES}</style><LoginScreen users={users} onLogin={handleLogin} /></div>;
+  }, [session, currentUser, products.length]);
+
+  if (!currentUser) {
+    return (
+      <div style={{ fontFamily: FONT_BODY, minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <style>{STYLES}</style>
+      </div>
+    );
   }
 
   const content = (
