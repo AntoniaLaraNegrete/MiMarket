@@ -850,22 +850,114 @@ function MobileTopbar({ view, setView, currentUser, onLogout, profile, cajaState
 
 
 /* ============================== PANEL ============================== */
-function PanelView({ products, sales, fiados, profile, setView, currentUser }) {
+function MetaGoalModal({ initial, onClose, onSave }) {
+  const [amount, setAmount] = useState(initial?.amount || "");
+  const [deadline, setDeadline] = useState(initial?.deadline || "");
+  return (
+    <Modal title={initial ? "Editar meta" : "Agregar meta"} onClose={onClose} width={380}>
+      <div className="flex flex-col gap-4">
+        <Field label="Monto de la meta"><input type="number" style={inputStyle} value={amount} onChange={e=>setAmount(e.target.value)} placeholder="Ej: 500000" /></Field>
+        <Field label="Finaliza la meta"><input type="date" style={inputStyle} value={deadline} onChange={e=>setDeadline(e.target.value)} /></Field>
+      </div>
+      <div className="flex justify-end gap-2 mt-6">
+        <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
+        <Btn icon={Check} onClick={()=>{
+          if(!amount || Number(amount)<=0 || !deadline) return;
+          onSave({ amount:Number(amount), deadline, createdAt: initial?.createdAt || new Date().toISOString() });
+        }}>Guardar</Btn>
+      </div>
+    </Modal>
+  );
+}
+
+function MetaGoalSection({ profile, setProfile, sales, showToast }) {
+  const [editing, setEditing] = useState(false);
+  const meta = profile.meta;
+  const progreso = useMemo(()=>{
+    if (!meta) return { logrado:0, pct:0, faltante:0 };
+    const logrado = sales.filter(s=>s.datetime >= meta.createdAt).reduce((sum,s)=>sum+s.total,0);
+    const pct = Math.max(0, Math.min(100, Math.round((logrado/meta.amount)*100)));
+    const faltante = Math.max(0, meta.amount - logrado);
+    return { logrado, pct, faltante };
+  }, [meta, sales]);
+
+  return (
+    <Card style={{ padding: 20, marginBottom: 32 }}>
+      {!meta ? (
+        <button onClick={()=>setEditing(true)} className="flex items-center gap-3 w-full text-left">
+          <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: C.orangeLight }}><Target size={18} color={C.orange} /></div>
+          <div className="flex-1">
+            <div className="font-bold text-sm" style={{ color: C.text, fontFamily: FONT_DISPLAY }}>Agregar Meta</div>
+            <div className="text-xs" style={{ color: C.textMuted }}>Ponte un objetivo de ventas y sigue tu avance</div>
+          </div>
+          <ChevronRight size={18} color={C.textMuted} />
+        </button>
+      ) : (
+        <div className="flex items-center gap-5 flex-wrap sm:flex-nowrap">
+          <div className="flex-1 min-w-[160px]">
+            <div className="flex items-center gap-2 mb-1">
+              <Target size={15} color={C.orange} />
+              <span className="text-xs font-bold uppercase tracking-wide" style={{ color: C.orange }}>Meta de ventas</span>
+            </div>
+            <div className="flex gap-6 flex-wrap mt-2">
+              <div>
+                <div className="text-[11px] font-semibold" style={{ color: C.textMuted }}>Finaliza la meta</div>
+                <div className="text-sm font-bold" style={{ color: C.text }}>{formatDate(meta.deadline)}</div>
+              </div>
+              <div>
+                <div className="text-[11px] font-semibold" style={{ color: C.textMuted }}>Faltante</div>
+                <div className="text-sm font-bold" style={{ fontFamily: FONT_MONO, color: progreso.faltante>0 ? C.text : C.success }}>{formatCLP(progreso.faltante)}</div>
+              </div>
+              <div>
+                <div className="text-[11px] font-semibold" style={{ color: C.textMuted }}>Meta total</div>
+                <div className="text-sm font-bold" style={{ fontFamily: FONT_MONO, color: C.text }}>{formatCLP(meta.amount)}</div>
+              </div>
+            </div>
+            <button onClick={()=>setEditing(true)} className="text-xs font-semibold mt-3" style={{ color: C.orange }}>Editar meta</button>
+          </div>
+          <div className="w-24 h-24 rounded-full flex items-center justify-center shrink-0" style={{ background: `conic-gradient(${C.orange} ${progreso.pct*3.6}deg, ${C.cream} 0deg)` }}>
+            <div className="w-[76px] h-[76px] rounded-full flex items-center justify-center" style={{ background: "#fff" }}>
+              <span className="text-lg font-bold" style={{ fontFamily: FONT_MONO, color: C.text }}>{progreso.pct}%</span>
+            </div>
+          </div>
+        </div>
+      )}
+      {editing && (
+        <MetaGoalModal initial={meta} onClose={()=>setEditing(false)} onSave={m=>{ setProfile({...profile, meta:m}); setEditing(false); showToast("Meta guardada"); }} />
+      )}
+    </Card>
+  );
+}
+
+function PanelView({ products, sales, fiados, profile, setProfile, setView, currentUser }) {
   const today = todayISO();
   const salesToday = sales.filter(s=>s.datetime.slice(0,10)===today);
-  const totalHoy   = salesToday.reduce((s,x)=>s+x.total,0);
   const totalFiado = fiados.filter(f=>f.balance>0).reduce((s,f)=>s+f.balance,0);
   const lowStock   = products.filter(p=>p.stock<=5);
 
-  const stats = [
-    { label:"Ventas hoy",       value:formatCLP(totalHoy),      icon:TrendingUp,      color:C.orange,       bg:C.orangeLight },
-    { label:"Boletas hoy",      value:salesToday.length,         icon:Receipt,         color:C.navy,         bg:C.navyLight   },
-    { label:"Fiados pendientes",value:formatCLP(totalFiado),     icon:Coins,           color:C.plum,         bg:C.plumLight   },
+  const sumBy = (types) => salesToday.filter(s=>types.includes(s.paymentType)).reduce((s,x)=>s+x.total,0);
+  const paymentStats = [
+    { label:"Ventas Efectivo",      value:sumBy(["efectivo"]),           icon:Banknote,       color:C.success },
+    { label:"Ventas Tarjeta",       value:sumBy(["debito","credito"]),   icon:CreditCard,     color:C.teal    },
+    { label:"Ventas Transferencia", value:sumBy(["transferencia"]),      icon:ArrowLeftRight, color:C.amber   },
+    { label:"Fiados Pendientes",    value:totalFiado,                    icon:Coins,          color:C.navy    },
   ];
+
+  const quickAccess = ["inventario","venta","reporte","contabilidad","caja","fiados","boletas","configurar","tutoriales","ecommerce","metas","contacto"];
+  const [showMetaModal, setShowMetaModal] = useState(false);
 
   return (
     <div>
-      <PageHeader title={`Hola, ${currentUser?.name?.split(" ")[0] || "bienvenido"} 👋`} subtitle={`Resumen del día · ${formatDate(today)} · ${profile.name}`}/>
+      <div className="flex items-center gap-4 mb-6 flex-wrap">
+        <div className="flex-1 min-w-[220px]">
+          <h1 className="text-2xl font-bold" style={{ fontFamily:FONT_DISPLAY, color:C.text }}>Hola, {currentUser?.name?.split(" ")[0] || "bienvenido"} 👋</h1>
+          <p className="text-sm mt-1" style={{ color:C.textMuted }}>Resumen del día · {formatDate(today)}</p>
+        </div>
+        <div className="w-14 h-14 rounded-2xl flex items-center justify-center shrink-0" style={{ background:C.cream, border:`1px solid ${C.border}` }}>
+          {profile.logoUrl ? <img src={profile.logoUrl} alt="logo" className="w-full h-full object-cover rounded-2xl" /> : <ImageIcon size={20} color={C.textMuted} />}
+        </div>
+      </div>
+
       {lowStock.length>0 && (
         <div onClick={()=>setView("inventario")} className="flex items-center gap-3 px-4 py-3 rounded-xl mb-5 cursor-pointer"
           style={{ background:C.amberLight, border:`1px solid #FDE68A` }}>
@@ -874,26 +966,50 @@ function PanelView({ products, sales, fiados, profile, setView, currentUser }) {
           <ChevronRight size={16} color={C.amber}/>
         </div>
       )}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        {stats.map(s=>(
-          <Card key={s.label} style={{ padding:18 }}>
-            <div className="w-9 h-9 rounded-lg flex items-center justify-center mb-3" style={{ background:s.bg }}><s.icon size={17} color={s.color}/></div>
-            <div className="text-2xl font-bold" style={{ fontFamily:FONT_MONO, color:C.text }}>{s.value}</div>
-            <div className="text-xs mt-1" style={{ color:C.textMuted }}>{s.label}</div>
-          </Card>
-        ))}
-      </div>
+
+      <Card style={{ padding: 20, marginBottom: 24 }}>
+        <div className="flex rounded-full overflow-hidden mb-4" style={{ height: 8 }}>
+          {paymentStats.map(s=><div key={s.label} className="flex-1" style={{ background:s.color }} />)}
+        </div>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {paymentStats.map(s=>(
+            <div key={s.label}>
+              <div className="w-8 h-8 rounded-full flex items-center justify-center mb-2" style={{ border:`2px solid ${s.color}` }}><s.icon size={14} color={s.color}/></div>
+              <div className="text-lg font-bold" style={{ fontFamily:FONT_MONO, color:C.text }}>{formatCLP(s.value)}</div>
+              <div className="text-xs mt-0.5" style={{ color:C.textMuted }}>{s.label}</div>
+            </div>
+          ))}
+        </div>
+      </Card>
+
+      <MetaGoalSection profile={profile} setProfile={setProfile} sales={sales} showToast={()=>{}} />
+
       <h2 className="text-sm font-bold mb-3" style={{ color:C.text, fontFamily:FONT_DISPLAY }}>Accesos rápidos</h2>
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-        {NAV_ITEMS.filter(n=>n.id!=="panel"&&n.roles.includes("admin")).map(item=>(
-          <button key={item.id} onClick={()=>setView(item.id)}
-            className="flex items-center gap-3 p-4 rounded-2xl text-left transition hover:shadow-md"
-            style={{ background:C.surface, border:`1px solid ${C.border}` }}>
-            <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style={{ background:C.orangeLight }}><item.icon size={17} color={C.orange}/></div>
-            <span className="text-sm font-semibold" style={{ color:C.text }}>{item.label}</span>
-          </button>
-        ))}
+        {quickAccess.map(id=>{
+          if (id === "metas") {
+            return (
+              <button key="metas" onClick={()=>setShowMetaModal(true)}
+                className="py-4 rounded-2xl text-center font-bold text-sm text-white transition hover:opacity-90"
+                style={{ background: PREMIUM_GRADIENT }}>
+                Metas
+              </button>
+            );
+          }
+          const item = NAV_ITEMS.find(n=>n.id===id);
+          if (!item) return null;
+          return (
+            <button key={id} onClick={()=>setView(id)}
+              className="py-4 rounded-2xl text-center font-bold text-sm text-white transition hover:opacity-90"
+              style={{ background: C.orange }}>
+              {item.label}
+            </button>
+          );
+        })}
       </div>
+      {showMetaModal && (
+        <MetaGoalModal initial={profile.meta} onClose={()=>setShowMetaModal(false)} onSave={m=>{ setProfile({...profile, meta:m}); setShowMetaModal(false); }} />
+      )}
     </div>
   );
 }
@@ -2786,7 +2902,7 @@ export default function App({ session, onLogout, isOwner, onOpenAdmin }) {
   const [proveedores, setProveedores] = useState([]);
   const [counters,    setCounters]    = useState({ voucher: 1000, boleta: 8800 });
   const [cajaState,   setCajaState]   = useState({ isOpen: false, openedAt: new Date().toISOString(), openingAmount: 0 });
-  const [profile,     setProfile]     = useState({ name: "Mi Minimarket", rut: "", address: "", comuna: "", region: "", size: "50 a 100 metros cuadrados", type: "minimarket", modules: ["inventario"], categories: [] });
+  const [profile,     setProfile]     = useState({ name: "Mi Minimarket", rut: "", address: "", comuna: "", region: "", size: "50 a 100 metros cuadrados", type: "minimarket", modules: ["inventario"], categories: [], meta: null });
   const [profileLoaded, setProfileLoaded] = useState(false);
 
   // Cargar el perfil del negocio guardado en Supabase al entrar
@@ -2802,7 +2918,7 @@ export default function App({ session, onLogout, isOwner, onOpenAdmin }) {
         setProfile({
           name: data.name || "Mi Minimarket", rut: data.rut || "", address: data.address || "",
           comuna: data.comuna || "", region: data.region || "", size: data.size || "50 a 100 metros cuadrados",
-          type: data.type || "minimarket", modules: data.modules || ["inventario"], categories: data.categories || [],
+          type: data.type || "minimarket", modules: data.modules || ["inventario"], categories: data.categories || [], meta: data.meta || null,
         });
       }
       setProfileLoaded(true);
@@ -2817,7 +2933,7 @@ export default function App({ session, onLogout, isOwner, onOpenAdmin }) {
         user_id: session.user.id,
         email: session.user.email,
         name: profile.name, rut: profile.rut, address: profile.address, comuna: profile.comuna,
-        region: profile.region, size: profile.size, type: profile.type, modules: profile.modules, categories: profile.categories || [],
+        region: profile.region, size: profile.size, type: profile.type, modules: profile.modules, categories: profile.categories || [], meta: profile.meta || null,
         updated_at: new Date().toISOString(),
       }, { onConflict: "user_id" }).then(({ error }) => {
         if (error) console.error("Error guardando perfil del negocio:", error);
@@ -2879,7 +2995,7 @@ export default function App({ session, onLogout, isOwner, onOpenAdmin }) {
 
   const content = (
     <div className="p-4 md:p-7" style={{ paddingBottom: isTablet ? 100 : 32 }}>
-      {view === "panel"      && currentUser.role === "admin" && <PanelView products={products} sales={sales} fiados={fiados} profile={profile} setView={setView} currentUser={currentUser} />}
+      {view === "panel"      && currentUser.role === "admin" && <PanelView products={products} sales={sales} fiados={fiados} profile={profile} setProfile={setProfile} setView={setView} currentUser={currentUser} />}
       {view === "inventario" && currentUser.role === "admin" && <InventarioView products={products} setProducts={setProducts} showToast={showToast} profile={profile} />}
       {view === "venta"                                       && <VentaView {...viewProps} />}
       {view === "reporte"    && currentUser.role === "admin" && <ReporteView sales={sales} products={products} />}
