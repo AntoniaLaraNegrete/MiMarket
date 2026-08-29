@@ -1984,12 +1984,31 @@ function ConfigurarView({ profile, setProfile, showToast, users, currentUser, on
             <Field label="Tipo de impresora"><select style={inputStyle}><option>Térmica 80mm</option><option>Térmica 58mm</option><option>PDF / Sin impresora</option></select></Field></>
           )}
           {tab==="logo"&&(
-            <div className="flex flex-col items-center text-center py-10">
-              <div className="w-12 h-12 rounded-full flex items-center justify-center mb-3" style={{background:C.orangeLight}}><Lock size={20} color={C.orangeDark}/></div>
-              <p className="font-semibold text-sm mb-1" style={{color:C.text}}>Función Premium</p>
-              <p className="text-xs mb-4" style={{color:C.textMuted,maxWidth:280}}>Sube tu logo con el plan Premium.</p>
-              <Btn>Conocer planes</Btn>
-            </div>
+            <>
+              <h3 className="font-bold mb-1" style={{fontFamily:FONT_DISPLAY,color:C.text}}>Logo de tu negocio</h3>
+              <p className="text-xs mb-5" style={{color:C.textMuted}}>Aparece en tu Panel principal y en tus boletas.</p>
+              <div className="flex items-center gap-4">
+                <div className="w-20 h-20 rounded-2xl flex items-center justify-center shrink-0 overflow-hidden" style={{background:C.cream,border:`1px solid ${C.border}`}}>
+                  {form.logoUrl ? <img src={form.logoUrl} alt="logo" className="w-full h-full object-cover"/> : <ImageIcon size={24} color={C.textMuted}/>}
+                </div>
+                <div className="flex flex-col gap-2">
+                  <label className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-sm cursor-pointer w-fit"
+                    style={{ background: C.orangeLight, color: C.orangeDark, border: `1.5px solid ${C.orange}30` }}>
+                    <Camera size={16} />
+                    Subir logo
+                    <input type="file" accept="image/*" className="hidden" onChange={e=>{
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      const reader = new FileReader();
+                      reader.onload = ev => setForm(f=>({...f, logoUrl: ev.target.result}));
+                      reader.readAsDataURL(file);
+                    }} />
+                  </label>
+                  {form.logoUrl && <button type="button" onClick={()=>setForm(f=>({...f,logoUrl:""}))} className="text-xs font-semibold text-left" style={{color:C.danger}}>Quitar logo</button>}
+                </div>
+              </div>
+              <div className="flex justify-end mt-6"><Btn icon={Check} onClick={()=>{setProfile(form);showToast("Logo actualizado");}}>Guardar cambios</Btn></div>
+            </>
           )}
           {tab==="categorias"&&(
             <>
@@ -2118,6 +2137,50 @@ function ContactanosView() {
 /* ============================== CONTABILIDAD ============================== */
 const GASTO_CATS = ["Arriendo","Luz","Agua","Gas","Internet / Teléfono","Sueldos","Mercadería","Transporte","Marketing","Otros"];
 const PIE_COLORS = ["#F97316","#FB923C","#FCD34D","#34D399","#60A5FA","#A78BFA","#F472B6","#4ADE80","#38BDF8","#C084FC"];
+
+const FIN_EXPLAIN = {
+  "Efectivo en caja": "Es el dinero que has recibido en efectivo por tus ventas. Representa la plata que tienes disponible ahora mismo.",
+  "Cuentas por cobrar (Fiados)": "Es el dinero que tus clientes te deben por ventas al fiado que todavía no te han pagado.",
+  "Valor inventario": "Es cuánto vale, al precio que TÚ pagaste, todo el stock de productos que tienes guardado sin vender.",
+  "Ingresos por transferencia / tarjeta": "Ventas que te pagaron por transferencia, débito o crédito, en vez de efectivo.",
+  "Cuentas por pagar (proveedores)": "Es lo que tú le debes a tus proveedores por mercadería que ya recibiste pero aún no has pagado.",
+  "Gastos pendientes": "Gastos del negocio (luz, arriendo, etc.) que ya se generaron pero todavía no pagas.",
+  "Capital invertido": "El dinero total que has puesto o gastado para mantener funcionando tu negocio.",
+  "Utilidad acumulada": "La ganancia total que ha generado tu negocio hasta ahora, después de restar todos los costos.",
+  "Ingresos por ventas": "El total de dinero que han generado todas tus ventas, sin restar ningún costo todavía.",
+  "Costo de mercadería vendida": "Lo que a TI te costó comprar los productos que ya vendiste (no lo que los cobraste al cliente).",
+  "UTILIDAD BRUTA": "Lo que ganas por vender, antes de restar gastos como arriendo, luz o sueldos.",
+  "Gastos operacionales": "Gastos del día a día para mantener el negocio funcionando: arriendo, luz, sueldos, etc.",
+  "UTILIDAD OPERACIONAL / NETA": "Tu ganancia real final, después de restar TODOS los costos y gastos del negocio.",
+};
+
+function InfoRow({ label, value, color, bold=false, border=false, suffix }) {
+  const [open, setOpen] = useState(false);
+  const explain = FIN_EXPLAIN[label];
+  return (
+    <div className="relative">
+      <div className={`flex justify-between items-center py-3 text-sm ${border ? "mt-1" : ""}`}
+        style={{ borderTop: border ? `2px solid ${C.border}` : "none", borderBottom: !border ? `1px solid ${C.border}` : "none", fontWeight: bold ? 700 : 400 }}>
+        <button type="button" onClick={()=>explain && setOpen(o=>!o)} className="flex items-center gap-1.5 text-left"
+          style={{ color: bold ? C.text : C.textMuted, cursor: explain ? "pointer" : "default" }}>
+          {label}
+          {explain && (
+            <span className="w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0"
+              style={{ background: open ? C.orange : C.cream, color: open ? "#fff" : C.textMuted }}>?</span>
+          )}
+        </button>
+        {suffix ? <span style={{ color: C.textMuted }}>{suffix}</span> :
+          value !== null && value !== undefined && <span style={{ fontFamily: FONT_MONO, color }}>{value >= 0 ? formatCLP(value) : "-" + formatCLP(-value)}</span>}
+      </div>
+      {open && explain && (
+        <div className="absolute z-20 left-0 top-full mt-1 p-3 rounded-xl text-xs leading-relaxed shadow-lg" style={{ background: C.ink, color: "#fff", maxWidth: 280 }}>
+          {explain}
+          <button type="button" onClick={()=>setOpen(false)} className="block mt-2 text-[10px] font-bold" style={{ color: C.orangeMid }}>Cerrar</button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function ContabilidadView({ sales, products, gastos, setGastos, proveedores, setProveedores, fiados, showToast }) {
   const [tab, setTab] = useState("panel");
@@ -2343,8 +2406,7 @@ function ContabilidadView({ sales, products, gastos, setGastos, proveedores, set
     { id: "panel", label: "Panel", icon: LayoutDashboard },
     { id: "gastos", label: "Gastos", icon: TrendingDown },
     { id: "proveedores", label: "Proveedores", icon: Truck },
-    { id: "balance", label: "Balance General", icon: BookOpen },
-    { id: "resultado", label: "Estado de Resultados", icon: DollarSign },
+    { id: "finanzas", label: "Balance y Resultados", icon: BookOpen },
     { id: "ratios", label: "Ratios", icon: Target },
     { id: "proyecciones", label: "Proyecciones", icon: TrendingUp },
     { id: "ia", label: "IA Compañera", icon: Brain },
@@ -2520,70 +2582,71 @@ function ContabilidadView({ sales, products, gastos, setGastos, proveedores, set
         </div>
       )}
 
-      {/* BALANCE GENERAL */}
-      {tab === "balance" && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-          <Card style={{ padding: 24 }}>
-            <h3 className="font-bold mb-4 text-base" style={{ fontFamily: FONT_DISPLAY, color: C.text }}>Activos</h3>
-            {[
-              { label: "Efectivo en caja", value: formatCLP(sales.filter(s => s.paymentType === "efectivo").reduce((a, s) => a + s.total, 0)) },
-              { label: "Cuentas por cobrar (Fiados)", value: formatCLP(0) },
-              { label: "Valor inventario", value: formatCLP(products.reduce((s, p) => s + p.purchasePrice * p.stock, 0)) },
-              { label: "Ingresos por transferencia / tarjeta", value: formatCLP(sales.filter(s => ["debito","credito","transferencia"].includes(s.paymentType)).reduce((a, s) => a + s.total, 0)) },
-            ].map((row, i) => (
-              <div key={i} className="flex justify-between py-3 text-sm" style={{ borderBottom: `1px solid ${C.border}` }}>
-                <span style={{ color: C.textMuted }}>{row.label}</span>
-                <span className="font-semibold" style={{ fontFamily: FONT_MONO, color: C.text }}>{row.value}</span>
-              </div>
-            ))}
-            <div className="flex justify-between py-3 font-bold text-sm mt-1">
-              <span style={{ color: C.text }}>TOTAL ACTIVOS</span>
-              <span style={{ fontFamily: FONT_MONO, color: C.success }}>{formatCLP(totalVentas + products.reduce((s, p) => s + p.purchasePrice * p.stock, 0))}</span>
-            </div>
-          </Card>
+      {/* BALANCE Y RESULTADOS (fusionado) */}
+      {tab === "finanzas" && (() => {
+        const efectivoEnCaja = sales.filter(s => s.paymentType === "efectivo").reduce((a, s) => a + s.total, 0);
+        const ingresosTarjetaTransfer = sales.filter(s => ["debito","credito","transferencia"].includes(s.paymentType)).reduce((a, s) => a + s.total, 0);
+        const valorInventario = products.reduce((s, p) => s + p.purchasePrice * p.stock, 0);
+        const totalActivos = totalVentas + valorInventario;
+        const totalPasivos = totalGastos + utilidadNeta;
+        return (
+          <div className="flex flex-col gap-5">
+            <Card style={{ padding: 24 }}>
+              <h3 className="font-bold mb-4 text-base" style={{ fontFamily: FONT_DISPLAY, color: C.text }}>Comparación general</h3>
+              <ResponsiveContainer width="100%" height={240}>
+                <BarChart data={[
+                  { name: "Activos", monto: totalActivos, fill: C.teal },
+                  { name: "Pasivos+Patrim.", monto: totalPasivos, fill: C.navy },
+                  { name: "Ingresos", monto: totalVentas, fill: C.success },
+                  { name: "Costo mercad.", monto: costoMercaderia, fill: C.danger },
+                  { name: "Utilidad neta", monto: utilidadNeta, fill: C.orange },
+                ]}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={C.border} vertical={false} />
+                  <XAxis dataKey="name" tick={{ fontSize: 11, fill: C.textMuted }} />
+                  <YAxis tick={{ fontSize: 11, fill: C.textMuted }} tickFormatter={v => formatCLP(v)} width={70} />
+                  <Tooltip formatter={v => formatCLP(v)} contentStyle={{ borderRadius: 10, border: `1px solid ${C.border}`, fontSize: 12 }} />
+                  <Bar dataKey="monto" radius={[6, 6, 0, 0]}>
+                    {["Activos","Pasivos+Patrim.","Ingresos","Costo mercad.","Utilidad neta"].map((n, i) => (
+                      <Cell key={n} fill={[C.teal, C.navy, C.success, C.danger, C.orange][i]} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </Card>
 
-          <Card style={{ padding: 24 }}>
-            <h3 className="font-bold mb-4 text-base" style={{ fontFamily: FONT_DISPLAY, color: C.text }}>Pasivos y Patrimonio</h3>
-            {[
-              { label: "Cuentas por pagar (proveedores)", value: formatCLP(0) },
-              { label: "Gastos pendientes", value: formatCLP(0) },
-              { label: "Capital invertido", value: formatCLP(totalGastos) },
-              { label: "Utilidad acumulada", value: formatCLP(utilidadNeta) },
-            ].map((row, i) => (
-              <div key={i} className="flex justify-between py-3 text-sm" style={{ borderBottom: `1px solid ${C.border}` }}>
-                <span style={{ color: C.textMuted }}>{row.label}</span>
-                <span className="font-semibold" style={{ fontFamily: FONT_MONO, color: C.text }}>{row.value}</span>
-              </div>
-            ))}
-            <div className="flex justify-between py-3 font-bold text-sm mt-1">
-              <span style={{ color: C.text }}>TOTAL PASIVOS + PATRIMONIO</span>
-              <span style={{ fontFamily: FONT_MONO, color: C.navy }}>{formatCLP(totalGastos + utilidadNeta)}</span>
-            </div>
-          </Card>
-        </div>
-      )}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+              <Card style={{ padding: 24 }}>
+                <h3 className="font-bold mb-2 text-base" style={{ fontFamily: FONT_DISPLAY, color: C.text }}>Activos</h3>
+                <InfoRow label="Efectivo en caja" value={efectivoEnCaja} color={C.text} />
+                <InfoRow label="Cuentas por cobrar (Fiados)" value={0} color={C.text} />
+                <InfoRow label="Valor inventario" value={valorInventario} color={C.text} />
+                <InfoRow label="Ingresos por transferencia / tarjeta" value={ingresosTarjetaTransfer} color={C.text} />
+                <InfoRow label="TOTAL ACTIVOS" value={totalActivos} color={C.success} bold border />
+              </Card>
 
-      {/* ESTADO DE RESULTADOS */}
-      {tab === "resultado" && (
-        <Card style={{ padding: 24, maxWidth: 560 }}>
-          <h3 className="font-bold mb-5 text-base" style={{ fontFamily: FONT_DISPLAY, color: C.text }}>Estado de Resultados</h3>
-          {[
-            { label: "Ingresos por ventas", value: totalVentas, color: C.success, bold: false },
-            { label: "Costo de mercadería vendida", value: -costoMercaderia, color: C.danger, bold: false },
-            { label: "UTILIDAD BRUTA", value: utilidadBruta, color: utilidadBruta >= 0 ? C.success : C.danger, bold: true, border: true },
-            { label: "Gastos operacionales", value: -otrosGastos, color: C.danger, bold: false },
-            { label: "UTILIDAD OPERACIONAL / NETA", value: utilidadNeta, color: utilidadNeta >= 0 ? C.success : C.danger, bold: true, border: true },
-            { label: `Margen bruto (${margenBruto}%)`, value: null, color: C.textMuted, bold: false },
-            { label: `Margen neto (${margenNeto}%)`, value: null, color: C.textMuted, bold: false },
-          ].map((row, i) => (
-            <div key={i} className={`flex justify-between py-3 text-sm ${row.border ? "mt-1" : ""}`}
-              style={{ borderTop: row.border ? `2px solid ${C.border}` : `1px solid ${C.border}`, fontWeight: row.bold ? 700 : 400 }}>
-              <span style={{ color: row.bold ? C.text : C.textMuted }}>{row.label}</span>
-              {row.value !== null && <span style={{ fontFamily: FONT_MONO, color: row.color }}>{row.value >= 0 ? formatCLP(row.value) : "-" + formatCLP(-row.value)}</span>}
+              <Card style={{ padding: 24 }}>
+                <h3 className="font-bold mb-2 text-base" style={{ fontFamily: FONT_DISPLAY, color: C.text }}>Pasivos y Patrimonio</h3>
+                <InfoRow label="Cuentas por pagar (proveedores)" value={0} color={C.text} />
+                <InfoRow label="Gastos pendientes" value={0} color={C.text} />
+                <InfoRow label="Capital invertido" value={totalGastos} color={C.text} />
+                <InfoRow label="Utilidad acumulada" value={utilidadNeta} color={C.text} />
+                <InfoRow label="TOTAL PASIVOS + PATRIMONIO" value={totalPasivos} color={C.navy} bold border />
+              </Card>
             </div>
-          ))}
-        </Card>
-      )}
+
+            <Card style={{ padding: 24 }}>
+              <h3 className="font-bold mb-2 text-base" style={{ fontFamily: FONT_DISPLAY, color: C.text }}>Estado de Resultados</h3>
+              <InfoRow label="Ingresos por ventas" value={totalVentas} color={C.success} />
+              <InfoRow label="Costo de mercadería vendida" value={-costoMercaderia} color={C.danger} />
+              <InfoRow label="UTILIDAD BRUTA" value={utilidadBruta} color={utilidadBruta >= 0 ? C.success : C.danger} bold border />
+              <InfoRow label="Gastos operacionales" value={-otrosGastos} color={C.danger} />
+              <InfoRow label="UTILIDAD OPERACIONAL / NETA" value={utilidadNeta} color={utilidadNeta >= 0 ? C.success : C.danger} bold border />
+              <InfoRow label={`Margen bruto`} suffix={`${margenBruto}%`} />
+              <InfoRow label={`Margen neto`} suffix={`${margenNeto}%`} />
+            </Card>
+          </div>
+        );
+      })()}
 
       {/* RATIOS */}
       {tab === "ratios" && (
@@ -2902,7 +2965,7 @@ export default function App({ session, onLogout, isOwner, onOpenAdmin }) {
   const [proveedores, setProveedores] = useState([]);
   const [counters,    setCounters]    = useState({ voucher: 1000, boleta: 8800 });
   const [cajaState,   setCajaState]   = useState({ isOpen: false, openedAt: new Date().toISOString(), openingAmount: 0 });
-  const [profile,     setProfile]     = useState({ name: "Mi Minimarket", rut: "", address: "", comuna: "", region: "", size: "50 a 100 metros cuadrados", type: "minimarket", modules: ["inventario"], categories: [], meta: null, onboardingCompleted: false });
+  const [profile,     setProfile]     = useState({ name: "Mi Minimarket", rut: "", address: "", comuna: "", region: "", size: "50 a 100 metros cuadrados", type: "minimarket", modules: ["inventario"], categories: [], meta: null, onboardingCompleted: false, logoUrl: "" });
   const [profileLoaded, setProfileLoaded] = useState(false);
 
   // Cargar el perfil del negocio guardado en Supabase al entrar
@@ -2918,7 +2981,7 @@ export default function App({ session, onLogout, isOwner, onOpenAdmin }) {
         setProfile({
           name: data.name || "Mi Minimarket", rut: data.rut || "", address: data.address || "",
           comuna: data.comuna || "", region: data.region || "", size: data.size || "50 a 100 metros cuadrados",
-          type: data.type || "minimarket", modules: data.modules || ["inventario"], categories: data.categories || [], meta: data.meta || null, onboardingCompleted: data.onboarding_completed || false,
+          type: data.type || "minimarket", modules: data.modules || ["inventario"], categories: data.categories || [], meta: data.meta || null, onboardingCompleted: data.onboarding_completed || false, logoUrl: data.logo_url || "",
         });
       }
       setProfileLoaded(true);
@@ -2933,7 +2996,7 @@ export default function App({ session, onLogout, isOwner, onOpenAdmin }) {
         user_id: session.user.id,
         email: session.user.email,
         name: profile.name, rut: profile.rut, address: profile.address, comuna: profile.comuna,
-        region: profile.region, size: profile.size, type: profile.type, modules: profile.modules, categories: profile.categories || [], meta: profile.meta || null, onboarding_completed: profile.onboardingCompleted || false,
+        region: profile.region, size: profile.size, type: profile.type, modules: profile.modules, categories: profile.categories || [], meta: profile.meta || null, onboarding_completed: profile.onboardingCompleted || false, logo_url: profile.logoUrl || "",
         updated_at: new Date().toISOString(),
       }, { onConflict: "user_id" }).then(({ error }) => {
         if (error) console.error("Error guardando perfil del negocio:", error);
