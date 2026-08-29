@@ -1154,7 +1154,7 @@ function ProductFormModal({ initial, categories, onClose, onSave }) {
   );
 }
 
-function InventarioView({ products, setProducts, showToast, profile }) {
+function InventarioView({ products, setProducts, showToast, profile, gastos, setGastos }) {
   const categories = activeCategories(profile);
   const [search, setSearch] = useState("");
   const [cat,    setCat]    = useState("Todas");
@@ -1162,6 +1162,7 @@ function InventarioView({ products, setProducts, showToast, profile }) {
   const [showForm,setShowForm]= useState(false);
   const [delTarget,setDelTarget]=useState(null);
   const [priceHistTarget,setPriceHistTarget]=useState(null);
+  const [showRestock,setShowRestock]=useState(false);
 
   const filtered = products.filter(p=>(cat==="Todas"||p.category===cat)&&p.name.toLowerCase().includes(search.toLowerCase()));
 
@@ -1176,6 +1177,7 @@ function InventarioView({ products, setProducts, showToast, profile }) {
       <PageHeader title="Inventario" subtitle={`${products.length} productos en tu catálogo`} right={
         <div className="flex gap-2 flex-wrap">
           <Btn variant="outline" icon={Download} onClick={handleExport}>Descargar</Btn>
+          <Btn variant="outline" icon={Truck} onClick={()=>setShowRestock(true)}>Reponer stock</Btn>
           <Btn icon={Plus} onClick={()=>{ setEditing(null); setShowForm(true); }}>Ingresar producto</Btn>
         </div>}/>
       <div className="flex gap-3 mb-5 flex-wrap">
@@ -1248,7 +1250,58 @@ function InventarioView({ products, setProducts, showToast, profile }) {
           </div>
         </Modal>
       )}
+      {showRestock && (
+        <RestockModal products={products} onClose={()=>setShowRestock(false)} onConfirm={({productId, qty, unitCost, proveedor})=>{
+          const prod = products.find(p=>p.id===productId);
+          if (!prod) return;
+          setProducts(products.map(p=>p.id===productId ? {...p, stock:p.stock+qty, purchasePrice:unitCost} : p));
+          setGastos([{ id: uid("g"), fecha: todayISO(), categoria: "Mercadería", descripcion: `Reposición: ${qty} x ${prod.name}`, monto: qty*unitCost, proveedor: proveedor||"" }, ...gastos]);
+          setShowRestock(false);
+          showToast(`Stock repuesto y gasto registrado (${formatCLP(qty*unitCost)})`);
+        }}/>
+      )}
     </div>
+  );
+}
+
+function RestockModal({ products, onClose, onConfirm }) {
+  const [productId, setProductId] = useState(products[0]?.id || "");
+  const [qty, setQty] = useState("");
+  const selected = products.find(p=>p.id===productId);
+  const [unitCost, setUnitCost] = useState(selected?.purchasePrice || "");
+  const [proveedor, setProveedor] = useState("");
+  const total = (Number(qty)||0) * (Number(unitCost)||0);
+
+  function selectProduct(id) {
+    setProductId(id);
+    const p = products.find(x=>x.id===id);
+    setUnitCost(p?.purchasePrice || "");
+  }
+
+  return (
+    <Modal title="Reponer stock" onClose={onClose} width={420}>
+      <p className="text-xs mb-4" style={{color:C.textMuted}}>Suma stock a un producto y registra el gasto de mercadería al mismo tiempo — no necesitas hacerlo dos veces.</p>
+      <div className="flex flex-col gap-4">
+        <Field label="Producto">
+          <select style={inputStyle} value={productId} onChange={e=>selectProduct(e.target.value)}>
+            {products.map(p=><option key={p.id} value={p.id}>{p.name} (stock actual: {p.stock})</option>)}
+          </select>
+        </Field>
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="Cantidad que compraste"><input type="number" min="1" style={inputStyle} value={qty} onChange={e=>setQty(e.target.value)} placeholder="0" /></Field>
+          <Field label="Costo por unidad"><input type="number" min="0" style={inputStyle} value={unitCost} onChange={e=>setUnitCost(e.target.value)} placeholder="0" /></Field>
+        </div>
+        <Field label="Proveedor (opcional)"><input style={inputStyle} value={proveedor} onChange={e=>setProveedor(e.target.value)} placeholder="Nombre del proveedor" /></Field>
+        <div className="rounded-xl px-4 py-3 flex justify-between items-center" style={{background:C.cream}}>
+          <span className="text-xs font-semibold" style={{color:C.textMuted}}>Total del gasto</span>
+          <span className="text-lg font-bold" style={{fontFamily:FONT_MONO,color:C.danger}}>{formatCLP(total)}</span>
+        </div>
+      </div>
+      <div className="flex justify-end gap-2 mt-6">
+        <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
+        <Btn icon={Check} disabled={!productId||!qty||Number(qty)<=0||!unitCost} onClick={()=>onConfirm({productId, qty:Number(qty), unitCost:Number(unitCost), proveedor})}>Reponer y registrar gasto</Btn>
+      </div>
+    </Modal>
   );
 }
 
@@ -3102,7 +3155,7 @@ export default function App({ session, onLogout, isOwner, onOpenAdmin }) {
   const content = (
     <div className="p-4 md:p-7" style={{ paddingBottom: isTablet ? 100 : 32 }}>
       {view === "panel"      && currentUser.role === "admin" && <PanelView products={products} sales={sales} fiados={fiados} profile={profile} setProfile={setProfile} setView={setView} currentUser={currentUser} />}
-      {view === "inventario" && currentUser.role === "admin" && <InventarioView products={products} setProducts={setProducts} showToast={showToast} profile={profile} />}
+      {view === "inventario" && currentUser.role === "admin" && <InventarioView products={products} setProducts={setProducts} showToast={showToast} profile={profile} gastos={gastos} setGastos={setGastos} />}
       {view === "venta"                                       && <VentaView {...viewProps} />}
       {view === "reporte"    && currentUser.role === "admin" && <ReporteView sales={sales} products={products} />}
       {view === "contabilidad" && currentUser.role === "admin" && <ContabilidadView sales={sales} products={products} gastos={gastos} setGastos={setGastos} proveedores={proveedores} setProveedores={setProveedores} fiados={fiados} showToast={showToast} />}
