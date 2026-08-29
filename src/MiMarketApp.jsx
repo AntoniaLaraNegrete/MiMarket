@@ -2186,7 +2186,8 @@ function ContabilidadView({ sales, products, gastos, setGastos, proveedores, set
   const [tab, setTab] = useState("panel");
   const [showGastoForm, setShowGastoForm] = useState(false);
   const [showProvForm, setShowProvForm] = useState(false);
-  const [gasto, setGasto] = useState({ fecha: todayISO(), categoria: GASTO_CATS[0], descripcion: "", monto: "", proveedor: "" });
+  const [gasto, setGasto] = useState({ fecha: todayISO(), categoria: GASTO_CATS[0], descripcion: "", monto: "", proveedor: "", facturaUrl: "", facturaNombre: "" });
+  const [customCat, setCustomCat] = useState(false);
   const [prov, setProv] = useState({ nombre: "", rut: "", telefono: "", email: "", condiciones: "30 días" });
   const [iaMessages, setIaMessages] = useState([{ role: "assistant", content: "¡Hola! Soy tu compañera financiera 🤝 Estoy aquí para ayudarte a entender tus números y tomar mejores decisiones para tu negocio. ¿En qué te puedo ayudar hoy?" }]);
   const [iaInput, setIaInput] = useState("");
@@ -2492,7 +2493,7 @@ function ContabilidadView({ sales, products, gastos, setGastos, proveedores, set
           <Card style={{ overflow: "hidden" }}>
             {gastos.length === 0 ? <EmptyState icon={TrendingDown} title="Sin gastos registrados" subtitle="Agrega tus gastos para ver tus finanzas reales" /> : (
               <table className="w-full text-sm">
-                <thead><tr style={{ background: C.cream }}>{["Fecha", "Categoría", "Descripción", "Proveedor", "Monto", ""].map(h => <th key={h} className="text-left px-4 py-3 font-semibold text-xs" style={{ color: C.textMuted }}>{h}</th>)}</tr></thead>
+                <thead><tr style={{ background: C.cream }}>{["Fecha", "Categoría", "Descripción", "Proveedor", "Monto", "Factura", ""].map(h => <th key={h} className="text-left px-4 py-3 font-semibold text-xs" style={{ color: C.textMuted }}>{h}</th>)}</tr></thead>
                 <tbody>
                   {gastos.map(g => (
                     <tr key={g.id} style={{ borderTop: `1px solid ${C.border}` }}>
@@ -2501,6 +2502,11 @@ function ContabilidadView({ sales, products, gastos, setGastos, proveedores, set
                       <td className="px-4 py-3" style={{ color: C.text }}>{g.descripcion}</td>
                       <td className="px-4 py-3 text-xs" style={{ color: C.textMuted }}>{g.proveedor || "—"}</td>
                       <td className="px-4 py-3 font-bold" style={{ fontFamily: FONT_MONO, color: C.danger }}>{formatCLP(g.monto)}</td>
+                      <td className="px-4 py-3">
+                        {g.facturaUrl
+                          ? <button onClick={() => window.open(g.facturaUrl, "_blank")} className="flex items-center gap-1 text-xs font-semibold" style={{ color: C.teal }}><Receipt size={13}/> Ver</button>
+                          : <span className="text-xs" style={{ color: C.textMuted }}>—</span>}
+                      </td>
                       <td className="px-4 py-3"><button onClick={() => setGastos(gastos.filter(x => x.id !== g.id))}><Trash2 size={14} color={C.danger} /></button></td>
                     </tr>
                   ))}
@@ -2513,17 +2519,52 @@ function ContabilidadView({ sales, products, gastos, setGastos, proveedores, set
             <Modal title="Registrar gasto" onClose={() => setShowGastoForm(false)}>
               <div className="grid grid-cols-2 gap-4">
                 <Field label="Fecha"><input type="date" style={inputStyle} value={gasto.fecha} onChange={e => setGasto({ ...gasto, fecha: e.target.value })} /></Field>
-                <Field label="Categoría"><select style={inputStyle} value={gasto.categoria} onChange={e => setGasto({ ...gasto, categoria: e.target.value })}>{GASTO_CATS.map(c => <option key={c}>{c}</option>)}</select></Field>
+                <Field label="Categoría">
+                  {!customCat ? (
+                    <select style={inputStyle} value={gasto.categoria} onChange={e => {
+                      if (e.target.value === "__otra__") { setCustomCat(true); setGasto({ ...gasto, categoria: "" }); }
+                      else setGasto({ ...gasto, categoria: e.target.value });
+                    }}>
+                      {GASTO_CATS.map(c => <option key={c}>{c}</option>)}
+                      <option value="__otra__">+ Otra categoría...</option>
+                    </select>
+                  ) : (
+                    <div className="flex gap-2">
+                      <input style={inputStyle} value={gasto.categoria} autoFocus onChange={e => setGasto({ ...gasto, categoria: e.target.value })} placeholder="Escribe la categoría" />
+                      <button type="button" onClick={() => { setCustomCat(false); setGasto({ ...gasto, categoria: GASTO_CATS[0] }); }} className="text-xs font-semibold shrink-0 px-2" style={{ color: C.textMuted }}>Cancelar</button>
+                    </div>
+                  )}
+                </Field>
                 <div className="col-span-2"><Field label="Descripción"><input style={inputStyle} value={gasto.descripcion} onChange={e => setGasto({ ...gasto, descripcion: e.target.value })} placeholder="Ej: Factura arriendo enero" /></Field></div>
                 <Field label="Monto ($)"><input type="number" style={inputStyle} value={gasto.monto} onChange={e => setGasto({ ...gasto, monto: e.target.value })} placeholder="0" /></Field>
                 <Field label="Proveedor (opcional)"><input style={inputStyle} value={gasto.proveedor} onChange={e => setGasto({ ...gasto, proveedor: e.target.value })} placeholder="Nombre del proveedor" /></Field>
+                <div className="col-span-2">
+                  <Field label="Factura o comprobante (opcional)">
+                    <div className="flex items-center gap-3 flex-wrap">
+                      <label className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-sm cursor-pointer shrink-0"
+                        style={{ background: C.orangeLight, color: C.orangeDark, border: `1.5px solid ${C.orange}30` }}>
+                        <Camera size={16} /> Adjuntar
+                        <input type="file" accept="image/*,application/pdf" className="hidden" onChange={e => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          const reader = new FileReader();
+                          reader.onload = ev => setGasto(g => ({ ...g, facturaUrl: ev.target.result, facturaNombre: file.name }));
+                          reader.readAsDataURL(file);
+                        }} />
+                      </label>
+                      {gasto.facturaUrl && <span className="text-xs font-medium" style={{ color: C.success }}>✓ {gasto.facturaNombre || "Archivo adjunto"}</span>}
+                      {gasto.facturaUrl && <button type="button" onClick={() => setGasto(g => ({ ...g, facturaUrl: "", facturaNombre: "" }))} className="text-xs font-semibold" style={{ color: C.danger }}>Quitar</button>}
+                    </div>
+                  </Field>
+                </div>
               </div>
               <div className="flex justify-end gap-2 mt-6">
                 <Btn variant="ghost" onClick={() => setShowGastoForm(false)}>Cancelar</Btn>
                 <Btn icon={Check} onClick={() => {
-                  if (!gasto.descripcion.trim() || !gasto.monto) return;
+                  if (!gasto.descripcion.trim() || !gasto.monto || !gasto.categoria.trim()) return;
                   setGastos([{ id: uid("g"), ...gasto, monto: Number(gasto.monto) }, ...gastos]);
-                  setGasto({ fecha: todayISO(), categoria: GASTO_CATS[0], descripcion: "", monto: "", proveedor: "" });
+                  setGasto({ fecha: todayISO(), categoria: GASTO_CATS[0], descripcion: "", monto: "", proveedor: "", facturaUrl: "", facturaNombre: "" });
+                  setCustomCat(false);
                   setShowGastoForm(false);
                   showToast("Gasto registrado");
                 }}>Guardar gasto</Btn>
