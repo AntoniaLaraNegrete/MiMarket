@@ -2902,7 +2902,7 @@ export default function App({ session, onLogout, isOwner, onOpenAdmin }) {
   const [proveedores, setProveedores] = useState([]);
   const [counters,    setCounters]    = useState({ voucher: 1000, boleta: 8800 });
   const [cajaState,   setCajaState]   = useState({ isOpen: false, openedAt: new Date().toISOString(), openingAmount: 0 });
-  const [profile,     setProfile]     = useState({ name: "Mi Minimarket", rut: "", address: "", comuna: "", region: "", size: "50 a 100 metros cuadrados", type: "minimarket", modules: ["inventario"], categories: [], meta: null });
+  const [profile,     setProfile]     = useState({ name: "Mi Minimarket", rut: "", address: "", comuna: "", region: "", size: "50 a 100 metros cuadrados", type: "minimarket", modules: ["inventario"], categories: [], meta: null, onboardingCompleted: false });
   const [profileLoaded, setProfileLoaded] = useState(false);
 
   // Cargar el perfil del negocio guardado en Supabase al entrar
@@ -2918,7 +2918,7 @@ export default function App({ session, onLogout, isOwner, onOpenAdmin }) {
         setProfile({
           name: data.name || "Mi Minimarket", rut: data.rut || "", address: data.address || "",
           comuna: data.comuna || "", region: data.region || "", size: data.size || "50 a 100 metros cuadrados",
-          type: data.type || "minimarket", modules: data.modules || ["inventario"], categories: data.categories || [], meta: data.meta || null,
+          type: data.type || "minimarket", modules: data.modules || ["inventario"], categories: data.categories || [], meta: data.meta || null, onboardingCompleted: data.onboarding_completed || false,
         });
       }
       setProfileLoaded(true);
@@ -2933,7 +2933,7 @@ export default function App({ session, onLogout, isOwner, onOpenAdmin }) {
         user_id: session.user.id,
         email: session.user.email,
         name: profile.name, rut: profile.rut, address: profile.address, comuna: profile.comuna,
-        region: profile.region, size: profile.size, type: profile.type, modules: profile.modules, categories: profile.categories || [], meta: profile.meta || null,
+        region: profile.region, size: profile.size, type: profile.type, modules: profile.modules, categories: profile.categories || [], meta: profile.meta || null, onboarding_completed: profile.onboardingCompleted || false,
         updated_at: new Date().toISOString(),
       }, { onConflict: "user_id" }).then(({ error }) => {
         if (error) console.error("Error guardando perfil del negocio:", error);
@@ -2953,7 +2953,7 @@ export default function App({ session, onLogout, isOwner, onOpenAdmin }) {
     setCurrentUser(user);
     const fv = NAV_ITEMS.find(n => n.roles.includes(user.role));
     setView(fv?.id || "venta");
-    if (user.role === "admin" && products.length === 0) setOnboarding(true);
+    if (user.role === "admin" && !profile.onboardingCompleted) setOnboarding(true);
   }
   function handleLogout() {
     if (onLogout) onLogout();
@@ -2975,15 +2975,17 @@ export default function App({ session, onLogout, isOwner, onOpenAdmin }) {
   `;
 
   // Entra directo con tu cuenta (correo/contraseña) — ya no pide PIN aparte
+  // Espera a que el perfil termine de cargar antes de decidir si mostrar el asistente inicial,
+  // así solo aparece la primera vez de verdad, no cada vez que recargas la página.
   useEffect(() => {
-    if (!currentUser && session?.user) {
+    if (!currentUser && session?.user && profileLoaded) {
       const nombre = session.user.email ? session.user.email.split("@")[0] : "Admin";
       const u = { id: session.user.id, name: nombre.charAt(0).toUpperCase() + nombre.slice(1), role: "admin" };
       setUsers([u]);
       setCurrentUser(u);
-      if (products.length === 0) setOnboarding(true);
+      if (!profile.onboardingCompleted) setOnboarding(true);
     }
-  }, [session, currentUser, products.length]);
+  }, [session, currentUser, profileLoaded, profile.onboardingCompleted]);
 
   if (!currentUser) {
     return (
@@ -3042,7 +3044,7 @@ export default function App({ session, onLogout, isOwner, onOpenAdmin }) {
           profile={profile}
           setProfile={setProfile}
           setProducts={setProducts}
-          onComplete={() => { setOnboarding(false); showToast("¡Bienvenido a MiMarket! 🎉"); }}
+          onComplete={() => { setProfile(p => ({...p, onboardingCompleted:true})); setOnboarding(false); showToast("¡Bienvenido a MiMarket! 🎉"); }}
         />
       )}
     </div>
