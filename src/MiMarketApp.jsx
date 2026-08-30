@@ -1163,6 +1163,7 @@ function InventarioView({ products, setProducts, showToast, profile, gastos, set
   const [delTarget,setDelTarget]=useState(null);
   const [priceHistTarget,setPriceHistTarget]=useState(null);
   const [showRestock,setShowRestock]=useState(false);
+  const [viewMode, setViewMode] = useState("catalogo"); // "catalogo" | "rentabilidad"
 
   const filtered = products.filter(p=>(cat==="Todas"||p.category===cat)&&p.name.toLowerCase().includes(search.toLowerCase()));
 
@@ -1180,6 +1181,21 @@ function InventarioView({ products, setProducts, showToast, profile, gastos, set
           <Btn variant="outline" icon={Truck} onClick={()=>setShowRestock(true)}>Reponer stock</Btn>
           <Btn icon={Plus} onClick={()=>{ setEditing(null); setShowForm(true); }}>Ingresar producto</Btn>
         </div>}/>
+
+      <div className="flex gap-2 mb-5">
+        {[{id:"catalogo",label:"Catálogo",icon:Package},{id:"rentabilidad",label:"Rentabilidad",icon:TrendingUp}].map(v=>(
+          <button key={v.id} onClick={()=>setViewMode(v.id)}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition"
+            style={{ background: viewMode===v.id ? C.ink : C.surface, color: viewMode===v.id ? "#fff" : C.textMuted, border:`1px solid ${C.border}` }}>
+            <v.icon size={13}/> {v.label}
+          </button>
+        ))}
+      </div>
+
+      {viewMode === "rentabilidad" ? (
+        <InventarioRentabilidad products={products} />
+      ) : (
+      <>
       <div className="flex gap-3 mb-5 flex-wrap">
         <div className="relative flex-1 min-w-[220px]">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2" color={C.textMuted}/>
@@ -1223,6 +1239,8 @@ function InventarioView({ products, setProducts, showToast, profile, gastos, set
           </div>
         )}
       </Card>
+      </>
+      )}
       {showForm && <ProductFormModal initial={editing} categories={categories} onClose={()=>setShowForm(false)} onSave={data=>{ if(editing) setProducts(products.map(p=>p.id===editing.id?{...p,...data}:p)); else setProducts([{id:uid("p"),...data},...products]); showToast(editing?"Producto actualizado":"Producto agregado"); setShowForm(false); }}/>}
       {delTarget && (
         <Modal title="Eliminar producto" onClose={()=>setDelTarget(null)} width={400}>
@@ -1260,6 +1278,98 @@ function InventarioView({ products, setProducts, showToast, profile, gastos, set
           showToast(`Stock repuesto y gasto registrado (${formatCLP(qty*unitCost)})`);
         }}/>
       )}
+    </div>
+  );
+}
+
+function InventarioRentabilidad({ products }) {
+  const enriched = products.map(p => {
+    const profit = (p.salePrice||0) - (p.purchasePrice||0);
+    const marginPct = p.salePrice>0 ? (profit/p.salePrice)*100 : 0;
+    const potential = profit * (p.stock||0);
+    return { ...p, profit, marginPct, potential };
+  });
+  const sorted = [...enriched].sort((a,b)=>b.potential-a.potential);
+  const topProduct = sorted[0];
+  const withMargin = enriched.filter(p=>p.salePrice>0 && p.purchasePrice>0);
+  const worstMargin = withMargin.length ? [...withMargin].sort((a,b)=>a.marginPct-b.marginPct)[0] : null;
+  const totalPotencial = enriched.reduce((s,p)=>s+p.potential,0);
+  const porCategoria = {};
+  enriched.forEach(p=>{ porCategoria[p.category] = (porCategoria[p.category]||0) + p.potential; });
+  const topCategoriaEntry = Object.entries(porCategoria).sort((a,b)=>b[1]-a[1])[0];
+  const chartData = sorted.slice(0,6).map(p=>({ name: p.name.length>16?p.name.slice(0,16)+"…":p.name, potencial: p.potential }));
+
+  return (
+    <div className="flex flex-col gap-5">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <Card style={{padding:18}}>
+          <div className="text-xs font-semibold mb-1" style={{color:C.textMuted}}>Ganancia potencial total</div>
+          <div className="text-xl font-bold" style={{fontFamily:FONT_MONO,color:totalPotencial>=0?C.success:C.danger}}>{formatCLP(totalPotencial)}</div>
+          <div className="text-[11px] mt-1" style={{color:C.textMuted}}>si vendes todo tu stock actual</div>
+        </Card>
+        {topProduct && topProduct.potential>0 && (
+          <Card style={{padding:18}}>
+            <div className="text-xs font-semibold mb-1" style={{color:C.textMuted}}>🏆 Tu producto estrella</div>
+            <div className="text-sm font-bold truncate" style={{color:C.text}}>{topProduct.name}</div>
+            <div className="text-[11px] mt-1" style={{color:C.textMuted}}>{formatCLP(topProduct.potential)} de ganancia potencial</div>
+          </Card>
+        )}
+        {topCategoriaEntry && (
+          <Card style={{padding:18}}>
+            <div className="text-xs font-semibold mb-1" style={{color:C.textMuted}}>📦 Categoría más rentable</div>
+            <div className="text-sm font-bold truncate" style={{color:C.text}}>{topCategoriaEntry[0]}</div>
+            <div className="text-[11px] mt-1" style={{color:C.textMuted}}>{formatCLP(topCategoriaEntry[1])} de ganancia potencial</div>
+          </Card>
+        )}
+        {worstMargin && (
+          <Card style={{padding:18}}>
+            <div className="text-xs font-semibold mb-1" style={{color:C.textMuted}}>⚠️ Margen más bajo</div>
+            <div className="text-sm font-bold truncate" style={{color:C.text}}>{worstMargin.name}</div>
+            <div className="text-[11px] mt-1" style={{color:C.danger}}>Solo {worstMargin.marginPct.toFixed(1)}% de margen</div>
+          </Card>
+        )}
+      </div>
+
+      {chartData.length>0 && (
+        <Card style={{padding:24}}>
+          <h3 className="font-bold mb-4 text-base" style={{fontFamily:FONT_DISPLAY,color:C.text}}>Top productos por ganancia potencial</h3>
+          <ResponsiveContainer width="100%" height={Math.max(200, chartData.length*42)}>
+            <BarChart data={chartData} layout="vertical" margin={{left:10}}>
+              <CartesianGrid strokeDasharray="3 3" stroke={C.border} horizontal={false} />
+              <XAxis type="number" tick={{fontSize:11,fill:C.textMuted}} tickFormatter={v=>formatCLP(v)} />
+              <YAxis type="category" dataKey="name" tick={{fontSize:11,fill:C.textMuted}} width={120} />
+              <Tooltip formatter={v=>formatCLP(v)} contentStyle={{borderRadius:10,border:`1px solid ${C.border}`,fontSize:12}} />
+              <Bar dataKey="potencial" radius={[0,6,6,0]} fill={C.orange} />
+            </BarChart>
+          </ResponsiveContainer>
+        </Card>
+      )}
+
+      <Card style={{overflow:"hidden"}}>
+        {sorted.length===0 ? <EmptyState icon={TrendingUp} title="Sin productos para analizar"/> : (
+        <div style={{overflowX:"auto"}}>
+          <table className="w-full text-sm" style={{borderCollapse:"collapse"}}>
+            <thead><tr style={{background:C.cream}}>{["Producto","Categoría","Margen","Ganancia x unidad","Stock","Ganancia potencial"].map(h=><th key={h} className="text-left px-4 py-3 font-semibold text-xs" style={{color:C.textMuted}}>{h}</th>)}</tr></thead>
+            <tbody>
+              {sorted.map(p=>{
+                const cs = styleForCategory(p.category);
+                const healthColor = p.profit<0 ? C.danger : p.marginPct<15 ? C.amber : p.marginPct<35 ? C.teal : C.success;
+                return (
+                  <tr key={p.id} style={{borderTop:`1px solid ${C.border}`}}>
+                    <td className="px-4 py-3 font-medium" style={{color:C.text}}>{p.name}</td>
+                    <td className="px-4 py-3"><span className="px-2 py-1 rounded-md text-xs font-bold" style={{background:cs.bg,color:cs.fg}}>{p.category}</span></td>
+                    <td className="px-4 py-3 font-bold" style={{fontFamily:FONT_MONO,color:healthColor}}>{p.marginPct.toFixed(1)}%</td>
+                    <td className="px-4 py-3" style={{fontFamily:FONT_MONO,color:C.text}}>{formatCLP(p.profit)}</td>
+                    <td className="px-4 py-3"><StockBadge stock={p.stock}/></td>
+                    <td className="px-4 py-3 font-bold" style={{fontFamily:FONT_MONO,color:p.potential>=0?C.success:C.danger}}>{formatCLP(p.potential)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        )}
+      </Card>
     </div>
   );
 }
