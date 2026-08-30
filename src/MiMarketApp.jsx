@@ -3226,12 +3226,19 @@ export default function App({ session, onLogout, isOwner, onOpenAdmin }) {
           comuna: data.comuna || "", region: data.region || "", size: data.size || "50 a 100 metros cuadrados",
           type: data.type || "minimarket", modules: data.modules || ["inventario"], categories: data.categories || [], meta: data.meta || null, onboardingCompleted: data.onboarding_completed || false, logoUrl: data.logo_url || "",
         });
+        if (data.products)    setProducts(data.products);
+        if (data.sales)       setSales(data.sales);
+        if (data.fiados)      setFiados(data.fiados);
+        if (data.gastos)      setGastos(data.gastos);
+        if (data.proveedores) setProveedores(data.proveedores);
+        if (data.counters)    setCounters(data.counters);
+        if (data.caja_state)  setCajaState(data.caja_state);
       }
       setProfileLoaded(true);
     })();
   }, [session?.user?.id]);
 
-  // Guardar el perfil en Supabase cada vez que cambie (con pequeño debounce)
+  // Guardar todos los datos del negocio en Supabase cada vez que cambien (con pequeño debounce)
   useEffect(() => {
     if (!profileLoaded || !session?.user?.id) return;
     const t = setTimeout(() => {
@@ -3240,13 +3247,14 @@ export default function App({ session, onLogout, isOwner, onOpenAdmin }) {
         email: session.user.email,
         name: profile.name, rut: profile.rut, address: profile.address, comuna: profile.comuna,
         region: profile.region, size: profile.size, type: profile.type, modules: profile.modules, categories: profile.categories || [], meta: profile.meta || null, onboarding_completed: profile.onboardingCompleted || false, logo_url: profile.logoUrl || "",
+        products, sales, fiados, gastos, proveedores, counters, caja_state: cajaState,
         updated_at: new Date().toISOString(),
       }, { onConflict: "user_id" }).then(({ error }) => {
-        if (error) console.error("Error guardando perfil del negocio:", error);
+        if (error) console.error("Error guardando datos del negocio:", error);
       });
-    }, 600);
+    }, 700);
     return () => clearTimeout(t);
-  }, [profile, profileLoaded, session?.user?.id]);
+  }, [profile, products, sales, fiados, gastos, proveedores, counters, cajaState, profileLoaded, session?.user?.id]);
 
   const [toast,       setToast]       = useState(null);
   const [onboarding,  setOnboarding]  = useState(false);
