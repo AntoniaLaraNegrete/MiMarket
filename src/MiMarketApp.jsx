@@ -1241,7 +1241,21 @@ function InventarioView({ products, setProducts, showToast, profile, gastos, set
       </Card>
       </>
       )}
-      {showForm && <ProductFormModal initial={editing} categories={categories} onClose={()=>setShowForm(false)} onSave={data=>{ if(editing) setProducts(products.map(p=>p.id===editing.id?{...p,...data}:p)); else setProducts([{id:uid("p"),...data},...products]); showToast(editing?"Producto actualizado":"Producto agregado"); setShowForm(false); }}/>}
+      {showForm && <ProductFormModal initial={editing} categories={categories} onClose={()=>setShowForm(false)} onSave={data=>{
+        if(editing) {
+          setProducts(products.map(p=>p.id===editing.id?{...p,...data}:p));
+          showToast("Producto actualizado");
+        } else {
+          setProducts([{id:uid("p"),...data},...products]);
+          if (data.stock>0 && data.purchasePrice>0) {
+            setGastos([{ id: uid("g"), fecha: todayISO(), categoria: "Mercadería", descripcion: `Compra inicial: ${data.stock} x ${data.name}`, monto: data.stock*data.purchasePrice, proveedor: "" }, ...gastos]);
+            showToast(`Producto agregado y gasto de ${formatCLP(data.stock*data.purchasePrice)} registrado`);
+          } else {
+            showToast("Producto agregado");
+          }
+        }
+        setShowForm(false);
+      }}/>}
       {delTarget && (
         <Modal title="Eliminar producto" onClose={()=>setDelTarget(null)} width={400}>
           <p className="text-sm" style={{color:C.text}}>¿Seguro que quieres eliminar <strong>{delTarget.name}</strong>? Esta acción no se puede deshacer.</p>
@@ -2698,6 +2712,14 @@ function ContabilidadView({ sales, products, gastos, setGastos, proveedores, set
                     </div>
                   )}
                 </Field>
+                {gasto.categoria === "Mercadería" && (
+                  <div className="col-span-2 flex items-start gap-2 px-3 py-2.5 rounded-xl" style={{ background: C.amberLight }}>
+                    <AlertTriangle size={14} color={C.amber} className="shrink-0 mt-0.5" />
+                    <p className="text-xs" style={{ color: "#92400E" }}>
+                      Si esto es para reponer stock de un producto, mejor usa <strong>"Reponer stock"</strong> en Inventario — así se actualiza el stock y el gasto al mismo tiempo. Usa este formulario solo para gastos de mercadería que no correspondan a un producto puntual.
+                    </p>
+                  </div>
+                )}
                 <div className="col-span-2"><Field label="Descripción"><input style={inputStyle} value={gasto.descripcion} onChange={e => setGasto({ ...gasto, descripcion: e.target.value })} placeholder="Ej: Factura arriendo enero" /></Field></div>
                 <Field label="Monto ($)"><input type="number" style={inputStyle} value={gasto.monto} onChange={e => setGasto({ ...gasto, monto: e.target.value })} placeholder="0" /></Field>
                 <Field label="Proveedor (opcional)"><input style={inputStyle} value={gasto.proveedor} onChange={e => setGasto({ ...gasto, proveedor: e.target.value })} placeholder="Nombre del proveedor" /></Field>
