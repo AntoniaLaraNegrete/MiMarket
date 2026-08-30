@@ -1164,8 +1164,10 @@ function InventarioView({ products, setProducts, showToast, profile, gastos, set
   const [priceHistTarget,setPriceHistTarget]=useState(null);
   const [showRestock,setShowRestock]=useState(false);
   const [viewMode, setViewMode] = useState("catalogo"); // "catalogo" | "rentabilidad"
+  const [onlyLowStock, setOnlyLowStock] = useState(false);
+  const lowStockProducts = products.filter(p=>p.stock<=5);
 
-  const filtered = products.filter(p=>(cat==="Todas"||p.category===cat)&&p.name.toLowerCase().includes(search.toLowerCase()));
+  const filtered = products.filter(p=>(cat==="Todas"||p.category===cat)&&p.name.toLowerCase().includes(search.toLowerCase())&&(!onlyLowStock||p.stock<=5));
 
   function handleExport() {
     const blob = new Blob(["Producto,Formato,Unidades por paquete,Precio Venta,Precio Compra,Stock,Categoria\n"+products.map(p=>`${p.name},${p.format},${p.unitsPerPackage||""},${p.salePrice},${p.purchasePrice},${p.stock},${p.category}`).join("\n")],{type:"text/csv"});
@@ -1191,6 +1193,21 @@ function InventarioView({ products, setProducts, showToast, profile, gastos, set
           </button>
         ))}
       </div>
+
+      {lowStockProducts.length>0 && (
+        <div className="flex items-center gap-3 px-4 py-3 rounded-xl mb-5 flex-wrap"
+          style={{ background:C.amberLight, border:`1px solid #FDE68A` }}>
+          <AlertTriangle size={18} color={C.amber}/>
+          <p className="text-sm flex-1" style={{ color:"#92400E" }}>
+            <strong>{lowStockProducts.length} producto{lowStockProducts.length===1?"":"s"}</strong> {lowStockProducts.length===1?"tiene":"tienen"} poco o ningún stock.
+          </p>
+          <button onClick={()=>{ setViewMode("catalogo"); setOnlyLowStock(o=>!o); }}
+            className="text-xs font-bold px-3 py-1.5 rounded-lg shrink-0"
+            style={{ background: onlyLowStock ? C.amber : "#fff", color: onlyLowStock ? "#fff" : C.amber, border:`1px solid ${C.amber}` }}>
+            {onlyLowStock ? "Ver todos" : "Ver solo estos"}
+          </button>
+        </div>
+      )}
 
       {viewMode === "rentabilidad" ? (
         <InventarioRentabilidad products={products} />
