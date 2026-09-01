@@ -43,14 +43,11 @@ export default function Auth() {
     if (!codigo.trim()) { setError('Ingresa tu código de acceso'); return; }
     setLoading(true); setError('');
 
-    // Verificar código
-    const { data: codigos, error: codError } = await supabase
-      .from('codigos_acceso')
-      .select('*')
-      .eq('codigo', codigo.toUpperCase().trim())
-      .eq('usado', false);
+    // Verificar código (a través de una función segura, sin exponer la tabla completa)
+    const { data: codigoValido, error: codError } = await supabase
+      .rpc('check_access_code', { p_codigo: codigo.toUpperCase().trim() });
 
-    if (codError || !codigos || codigos.length === 0) {
+    if (codError || !codigoValido) {
       setError('Código de acceso inválido o ya utilizado. Contacta a MiMarket para obtener tu código.');
       setLoading(false);
       return;
@@ -68,11 +65,8 @@ export default function Auth() {
       return;
     }
 
-    // Marcar código como usado
-    await supabase
-      .from('codigos_acceso')
-      .update({ usado: true, usado_por: email, usado_en: new Date().toISOString() })
-      .eq('codigo', codigo.toUpperCase().trim());
+    // Marcar código como usado (a través de la misma función segura)
+    await supabase.rpc('redeem_access_code', { p_codigo: codigo.toUpperCase().trim(), p_email: email });
 
     setMsg('¡Cuenta creada! Revisa tu correo para confirmar tu cuenta y luego inicia sesión.');
     setLoading(false);

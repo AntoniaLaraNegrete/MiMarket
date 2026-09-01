@@ -1,16 +1,62 @@
 import React, { useState, useMemo, useEffect, useRef } from "react";
 import { supabase } from "./supabase";
 import { BarcodeDetector } from "barcode-detector";
-import {
-  LayoutDashboard, Package, ShoppingCart, BarChart3, Wallet, Coins,
-  Receipt, Settings, PlayCircle, Globe, MessageCircle, Search, Plus, Pencil,
-  Trash2, X, Check, ChevronRight, ChevronLeft, ChevronDown, CreditCard,
-  Banknote, ArrowLeftRight, Layers, Printer, Building2, Users, Image as ImageIcon,
-  Shapes, Crown, TrendingUp, TrendingDown, Minus, ShoppingBag, AlertTriangle,
-  CheckCircle2, Download, Phone, Lock, Store, Sparkles, BookOpen, Brain,
-  PieChart as PieChartIcon, Target, Truck, DollarSign, Send, Bell, Camera,
-  RotateCcw, History, MapPin, Tag, Clock, UserCheck
-} from "lucide-react";
+import LayoutDashboard from "lucide-react/dist/esm/icons/layout-dashboard";
+import Package from "lucide-react/dist/esm/icons/package";
+import ShoppingCart from "lucide-react/dist/esm/icons/shopping-cart";
+import BarChart3 from "lucide-react/dist/esm/icons/bar-chart-3";
+import Wallet from "lucide-react/dist/esm/icons/wallet";
+import Coins from "lucide-react/dist/esm/icons/coins";
+import Receipt from "lucide-react/dist/esm/icons/receipt";
+import Settings from "lucide-react/dist/esm/icons/settings";
+import PlayCircle from "lucide-react/dist/esm/icons/circle-play";
+import Globe from "lucide-react/dist/esm/icons/globe";
+import MessageCircle from "lucide-react/dist/esm/icons/message-circle";
+import Search from "lucide-react/dist/esm/icons/search";
+import Plus from "lucide-react/dist/esm/icons/plus";
+import Pencil from "lucide-react/dist/esm/icons/pencil";
+import Trash2 from "lucide-react/dist/esm/icons/trash-2";
+import X from "lucide-react/dist/esm/icons/x";
+import Check from "lucide-react/dist/esm/icons/check";
+import ChevronRight from "lucide-react/dist/esm/icons/chevron-right";
+import ChevronLeft from "lucide-react/dist/esm/icons/chevron-left";
+import ChevronDown from "lucide-react/dist/esm/icons/chevron-down";
+import CreditCard from "lucide-react/dist/esm/icons/credit-card";
+import Banknote from "lucide-react/dist/esm/icons/banknote";
+import ArrowLeftRight from "lucide-react/dist/esm/icons/arrow-left-right";
+import Layers from "lucide-react/dist/esm/icons/layers";
+import Printer from "lucide-react/dist/esm/icons/printer";
+import Building2 from "lucide-react/dist/esm/icons/building-2";
+import Users from "lucide-react/dist/esm/icons/users";
+import ImageIcon from "lucide-react/dist/esm/icons/image";
+import Shapes from "lucide-react/dist/esm/icons/shapes";
+import Crown from "lucide-react/dist/esm/icons/crown";
+import TrendingUp from "lucide-react/dist/esm/icons/trending-up";
+import TrendingDown from "lucide-react/dist/esm/icons/trending-down";
+import Minus from "lucide-react/dist/esm/icons/minus";
+import ShoppingBag from "lucide-react/dist/esm/icons/shopping-bag";
+import AlertTriangle from "lucide-react/dist/esm/icons/triangle-alert";
+import CheckCircle2 from "lucide-react/dist/esm/icons/circle-check";
+import Download from "lucide-react/dist/esm/icons/download";
+import Phone from "lucide-react/dist/esm/icons/phone";
+import Lock from "lucide-react/dist/esm/icons/lock";
+import Store from "lucide-react/dist/esm/icons/store";
+import Sparkles from "lucide-react/dist/esm/icons/sparkles";
+import BookOpen from "lucide-react/dist/esm/icons/book-open";
+import Brain from "lucide-react/dist/esm/icons/brain";
+import PieChartIcon from "lucide-react/dist/esm/icons/pie-chart";
+import Target from "lucide-react/dist/esm/icons/target";
+import Truck from "lucide-react/dist/esm/icons/truck";
+import DollarSign from "lucide-react/dist/esm/icons/dollar-sign";
+import Send from "lucide-react/dist/esm/icons/send";
+import Bell from "lucide-react/dist/esm/icons/bell";
+import Camera from "lucide-react/dist/esm/icons/camera";
+import RotateCcw from "lucide-react/dist/esm/icons/rotate-ccw";
+import History from "lucide-react/dist/esm/icons/history";
+import MapPin from "lucide-react/dist/esm/icons/map-pin";
+import Tag from "lucide-react/dist/esm/icons/tag";
+import Clock from "lucide-react/dist/esm/icons/clock";
+import UserCheck from "lucide-react/dist/esm/icons/user-check";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, LineChart, Line, Legend
@@ -478,10 +524,15 @@ function CreateAccountScreen({ onCreated }) {
 }
 
 
-function LoginScreen({ users, onLogin }) {
+function LoginScreen({ users, onLogin, onCancel }) {
   const [sel, setSel] = useState(null);
   const [pin, setPin] = useState("");
   const [err, setErr] = useState("");
+
+  function selectUser(u) {
+    if (!u.pin) { onLogin(u); return; }
+    setSel(u); setPin(""); setErr("");
+  }
 
   function digit(d) {
     if (pin.length >= 4) return;
@@ -495,9 +546,14 @@ function LoginScreen({ users, onLogin }) {
   }
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center p-6" style={{
+    <div className="min-h-screen flex flex-col items-center justify-center p-6 relative" style={{
       background: `radial-gradient(circle at 50% 0%, #FFF7ED 0%, #F8FAFC 45%, #F1F5F9 100%)`
     }}>
+      {onCancel && (
+        <button onClick={onCancel} className="absolute top-5 right-5 w-9 h-9 rounded-full flex items-center justify-center" style={{ background:"#fff", border:`1px solid ${C.border}` }}>
+          <X size={16} color={C.textMuted} />
+        </button>
+      )}
       <div className="flex flex-col items-center mb-8 sm:mb-10">
         <div className="w-16 h-16 rounded-3xl flex items-center justify-center mb-4"
           style={{ background: PREMIUM_GRADIENT, boxShadow: `0 12px 28px ${C.orange}40` }}>
@@ -512,7 +568,7 @@ function LoginScreen({ users, onLogin }) {
           <p className="text-center text-sm mb-7" style={{ color: C.textMuted }}>Selecciona tu usuario para continuar</p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {users.map(u => (
-              <button key={u.id} onClick={() => { setSel(u); setPin(""); setErr(""); }}
+              <button key={u.id} onClick={() => selectUser(u)}
                 className="flex items-center gap-4 p-4 rounded-2xl text-left transition-all"
                 style={{
                   background: "#fff", border: `1px solid ${C.border}`,
@@ -654,8 +710,10 @@ const NAV_ITEMS = [
   { id:"venta",         label:"Venta",          icon:ShoppingCart,    roles:["admin","vendedor"] },
   { id:"reporte",       label:"Reporte",        icon:BarChart3,       roles:["admin"] },
   { id:"contabilidad",  label:"Contabilidad",   icon:BookOpen,        roles:["admin"] },
-  { id:"caja",          label:"Caja 360°",      icon:Wallet,          roles:["admin"] },
-  { id:"fiados",        label:"Fiados",         icon:Coins,           roles:["admin"] },
+  { id:"caja",          label:"Caja 360°",      icon:Wallet,          roles:["admin","vendedor"] },
+  { id:"pedidos",       label:"Pedidos",        icon:Truck,           roles:["admin","vendedor"], module:"pedidos" },
+  { id:"agenda",        label:"Agenda",         icon:Clock,           roles:["admin","vendedor"], module:"agenda" },
+  { id:"fiados",        label:"Fiados",         icon:Coins,           roles:["admin","vendedor"] },
   { id:"boletas",       label:"Boletas",        icon:Receipt,         roles:["admin","vendedor"] },
   { id:"configurar",    label:"Configurar",     icon:Settings,        roles:["admin"] },
   { id:"tutoriales",    label:"Tutoriales",     icon:PlayCircle,      roles:["admin","vendedor"] },
@@ -675,8 +733,8 @@ function useIsTablet() {
 }
 
 /* ── Sidebar profesional (PC y tablet landscape) ── */
-function Sidebar({ view, setView, currentUser, onLogout, profile, cajaState, products, fiados, sales, isOwner, onOpenAdmin }) {
-  const visible = NAV_ITEMS.filter(i => i.roles.includes(currentUser.role));
+function Sidebar({ view, setView, currentUser, onLogout, onSwitchUser, profile, cajaState, products, fiados, sales, isOwner, onOpenAdmin }) {
+  const visible = NAV_ITEMS.filter(i => i.roles.includes(currentUser.role) && (!i.module || profile?.modules?.includes(i.module)));
   const initials = currentUser.name.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase();
 
   return (
@@ -762,6 +820,9 @@ function Sidebar({ view, setView, currentUser, onLogout, profile, cajaState, pro
             <div style={{ fontSize: 12, fontWeight: 600, color: "#fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{currentUser.name}</div>
             <div style={{ fontSize: 10, color: C.inkText }}>{currentUser.role === "admin" ? "Administrador" : "Vendedor"}</div>
           </div>
+          <button onClick={onSwitchUser} title="Cambiar de usuario" style={{ background: "none", border: "none", cursor: "pointer", padding: 4, borderRadius: 6, display: "flex", alignItems: "center" }}>
+            <UserCheck size={15} color={C.inkText} />
+          </button>
           <button onClick={onLogout} title="Cerrar sesión" style={{ background: "none", border: "none", cursor: "pointer", padding: 4, borderRadius: 6, display: "flex", alignItems: "center" }}>
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={C.inkText} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
@@ -776,9 +837,9 @@ function Sidebar({ view, setView, currentUser, onLogout, profile, cajaState, pro
 }
 
 /* ── Topbar (solo en móvil/tablet portrait) ── */
-function MobileTopbar({ view, setView, currentUser, onLogout, profile, cajaState, products, fiados, sales, isOwner, onOpenAdmin }) {
+function MobileTopbar({ view, setView, currentUser, onLogout, onSwitchUser, profile, cajaState, products, fiados, sales, isOwner, onOpenAdmin }) {
   const [menuOpen, setMenuOpen] = useState(false);
-  const visible = NAV_ITEMS.filter(i => i.roles.includes(currentUser.role));
+  const visible = NAV_ITEMS.filter(i => i.roles.includes(currentUser.role) && (!i.module || profile?.modules?.includes(i.module)));
   const initials = currentUser.name.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase();
 
   return (
@@ -830,7 +891,11 @@ function MobileTopbar({ view, setView, currentUser, onLogout, profile, cajaState
                 );
               })}
             </div>
-            <div style={{ padding: "12px 14px", borderTop: `1px solid ${C.inkLine}` }}>
+            <div style={{ padding: "12px 14px", borderTop: `1px solid ${C.inkLine}`, display:"flex", flexDirection:"column", gap:2 }}>
+              <button onClick={onSwitchUser} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", borderRadius: 10, width: "100%", background: "none", border: "none", cursor: "pointer" }}>
+                <UserCheck size={15} color={C.inkText} />
+                <span style={{ fontSize: 13, color: C.inkText }}>Cambiar de usuario</span>
+              </button>
               <button onClick={onLogout} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", borderRadius: 10, width: "100%", background: "none", border: "none", cursor: "pointer" }}>
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={C.inkText} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>
@@ -1797,6 +1862,484 @@ function FiadoDetailModal({ client, onClose, onAbono }) {
   );
 }
 
+/* ============================== PEDIDOS ============================== */
+const PEDIDO_ESTADOS = [
+  { id: "pendiente", label: "En proceso", bg: "#FFFBEB", fg: "#B45309" },
+  { id: "listo",     label: "Listo",      bg: "#F0FDFA", fg: "#0D9488" },
+  { id: "entregado", label: "Entregado",  bg: "#F0FDF4", fg: "#16A34A" },
+];
+function estadoPedido(id) { return PEDIDO_ESTADOS.find(e => e.id === id) || PEDIDO_ESTADOS[0]; }
+
+function diaLabel(fechaISO) {
+  if (!fechaISO) return "Sin fecha";
+  const hoy = todayISO();
+  const manana = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+  if (fechaISO === hoy) return "Hoy";
+  if (fechaISO === manana) return "Mañana";
+  if (fechaISO < hoy) return "Atrasado";
+  return formatDate(fechaISO);
+}
+
+function PedidoFormModal({ initial, onClose, onSave }) {
+  const [form, setForm] = useState(initial || { cliente: "", telefono: "", detalle: "", cantidad: 1, precio: "", seña: "", fechaEntrega: todayISO(), estado: "pendiente", notas: "" });
+  return (
+    <Modal title={initial ? "Editar pedido" : "Nuevo pedido"} onClose={onClose} width={480}>
+      <div className="grid grid-cols-2 gap-4">
+        <div className="col-span-2"><Field label="¿Qué pidió el cliente?"><input style={inputStyle} value={form.detalle} onChange={e=>setForm({...form,detalle:e.target.value})} placeholder="Ej: Torta de cumpleaños chocolate" /></Field></div>
+        <Field label="Nombre del cliente"><input style={inputStyle} value={form.cliente} onChange={e=>setForm({...form,cliente:e.target.value})} placeholder="Ej: María González" /></Field>
+        <Field label="Teléfono (opcional)"><input style={inputStyle} value={form.telefono} onChange={e=>setForm({...form,telefono:e.target.value})} placeholder="+56 9..." /></Field>
+        <Field label="Cantidad"><input type="number" min="1" style={inputStyle} value={form.cantidad} onChange={e=>setForm({...form,cantidad:e.target.value})} /></Field>
+        <Field label="Fecha de entrega"><input type="date" style={inputStyle} value={form.fechaEntrega} onChange={e=>setForm({...form,fechaEntrega:e.target.value})} /></Field>
+        <Field label="Precio total"><input type="number" min="0" style={inputStyle} value={form.precio} onChange={e=>setForm({...form,precio:e.target.value})} placeholder="0" /></Field>
+        <Field label="Seña / anticipo (opcional)"><input type="number" min="0" style={inputStyle} value={form.seña} onChange={e=>setForm({...form,seña:e.target.value})} placeholder="0" /></Field>
+        <div className="col-span-2"><Field label="Estado">
+          <select style={inputStyle} value={form.estado} onChange={e=>setForm({...form,estado:e.target.value})}>
+            {PEDIDO_ESTADOS.map(e=><option key={e.id} value={e.id}>{e.label}</option>)}
+          </select>
+        </Field></div>
+        <div className="col-span-2"><Field label="Notas (opcional)"><input style={inputStyle} value={form.notas} onChange={e=>setForm({...form,notas:e.target.value})} placeholder="Ej: sin nueces, escribir 'Feliz cumple Ana'" /></Field></div>
+      </div>
+      <div className="flex justify-end gap-2 mt-6">
+        <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
+        <Btn icon={Check} disabled={!form.detalle.trim()||!form.cliente.trim()} onClick={()=>onSave({...form, cantidad:Number(form.cantidad)||1, precio:Number(form.precio)||0, seña:Number(form.seña)||0})}>Guardar pedido</Btn>
+      </div>
+    </Modal>
+  );
+}
+
+function PedidosView({ pedidos, setPedidos, showToast }) {
+  const [showForm, setShowForm] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [delTarget, setDelTarget] = useState(null);
+  const [filtroEstado, setFiltroEstado] = useState("todos");
+
+  const filtrados = pedidos.filter(p => filtroEstado === "todos" || p.estado === filtroEstado);
+  const ordenados = [...filtrados].sort((a,b) => (a.fechaEntrega||"").localeCompare(b.fechaEntrega||""));
+  const pendientesCount = pedidos.filter(p=>p.estado==="pendiente").length;
+  const hoyCount = pedidos.filter(p=>p.fechaEntrega===todayISO() && p.estado!=="entregado").length;
+
+  return (
+    <div>
+      <PageHeader title="Pedidos" subtitle={`${pedidos.length} pedidos registrados`} right={
+        <Btn icon={Plus} onClick={()=>{setEditing(null);setShowForm(true);}}>Nuevo pedido</Btn>
+      }/>
+
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-5">
+        <Card style={{padding:18}}>
+          <div className="text-xs font-semibold mb-1" style={{color:C.textMuted}}>Para entregar hoy</div>
+          <div className="text-2xl font-bold" style={{fontFamily:FONT_MONO,color:C.orange}}>{hoyCount}</div>
+        </Card>
+        <Card style={{padding:18}}>
+          <div className="text-xs font-semibold mb-1" style={{color:C.textMuted}}>En proceso</div>
+          <div className="text-2xl font-bold" style={{fontFamily:FONT_MONO,color:C.amber}}>{pendientesCount}</div>
+        </Card>
+        <Card style={{padding:18}}>
+          <div className="text-xs font-semibold mb-1" style={{color:C.textMuted}}>Total pedidos</div>
+          <div className="text-2xl font-bold" style={{fontFamily:FONT_MONO,color:C.text}}>{pedidos.length}</div>
+        </Card>
+      </div>
+
+      <div className="flex gap-2 mb-4 flex-wrap">
+        <button onClick={()=>setFiltroEstado("todos")} className="px-3 py-1.5 rounded-lg text-xs font-semibold" style={{background:filtroEstado==="todos"?C.ink:C.surface,color:filtroEstado==="todos"?"#fff":C.textMuted,border:`1px solid ${C.border}`}}>Todos</button>
+        {PEDIDO_ESTADOS.map(e=>(
+          <button key={e.id} onClick={()=>setFiltroEstado(e.id)} className="px-3 py-1.5 rounded-lg text-xs font-semibold" style={{background:filtroEstado===e.id?C.ink:C.surface,color:filtroEstado===e.id?"#fff":C.textMuted,border:`1px solid ${C.border}`}}>{e.label}</button>
+        ))}
+      </div>
+
+      {ordenados.length===0 ? (
+        <EmptyState icon={Truck} title="Sin pedidos" subtitle="Registra el primer pedido de un cliente" />
+      ) : (
+        <div className="flex flex-col gap-2.5">
+          {ordenados.map(p=>{
+            const est = estadoPedido(p.estado);
+            const atrasado = p.fechaEntrega < todayISO() && p.estado !== "entregado";
+            return (
+              <Card key={p.id} style={{padding:16}}>
+                <div className="flex items-start justify-between gap-3 flex-wrap">
+                  <div className="flex-1 min-w-[200px]">
+                    <div className="flex items-center gap-2 flex-wrap mb-1">
+                      <span className="text-xs font-bold px-2 py-0.5 rounded-md" style={{background: atrasado?C.dangerLight:C.cream, color: atrasado?C.danger:C.textMuted}}>{diaLabel(p.fechaEntrega)}</span>
+                      <span className="text-xs font-bold px-2 py-0.5 rounded-md" style={{background:est.bg,color:est.fg}}>{est.label}</span>
+                    </div>
+                    <div className="font-semibold text-sm" style={{color:C.text}}>{p.detalle} {p.cantidad>1?`(x${p.cantidad})`:""}</div>
+                    <div className="text-xs mt-0.5" style={{color:C.textMuted}}>{p.cliente}{p.telefono?` · ${p.telefono}`:""}</div>
+                    {p.notas && <div className="text-xs mt-1 italic" style={{color:C.textMuted}}>"{p.notas}"</div>}
+                  </div>
+                  <div className="text-right shrink-0">
+                    <div className="font-bold" style={{fontFamily:FONT_MONO,color:C.text}}>{formatCLP(p.precio)}</div>
+                    {p.seña>0 && <div className="text-xs" style={{color:C.textMuted}}>Seña: {formatCLP(p.seña)}</div>}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 mt-3 pt-3" style={{borderTop:`1px solid ${C.border}`}}>
+                  {PEDIDO_ESTADOS.filter(e=>e.id!==p.estado).map(e=>(
+                    <button key={e.id} onClick={()=>{setPedidos(pedidos.map(x=>x.id===p.id?{...x,estado:e.id}:x)); showToast(`Pedido marcado como "${e.label}"`);}}
+                      className="text-xs font-semibold px-2.5 py-1 rounded-lg" style={{background:e.bg,color:e.fg}}>
+                      Marcar {e.label.toLowerCase()}
+                    </button>
+                  ))}
+                  <div className="flex-1" />
+                  <button onClick={()=>{setEditing(p);setShowForm(true);}}><Pencil size={14} color={C.textMuted}/></button>
+                  <button onClick={()=>setDelTarget(p)}><Trash2 size={14} color={C.danger}/></button>
+                </div>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+
+      {showForm && (
+        <PedidoFormModal initial={editing} onClose={()=>setShowForm(false)} onSave={data=>{
+          if (editing) setPedidos(pedidos.map(p=>p.id===editing.id?{...p,...data}:p));
+          else setPedidos([{id:uid("ped"),...data},...pedidos]);
+          showToast(editing?"Pedido actualizado":"Pedido registrado");
+          setShowForm(false);
+        }}/>
+      )}
+      {delTarget && (
+        <Modal title="Eliminar pedido" onClose={()=>setDelTarget(null)} width={360}>
+          <div className="flex flex-col items-center text-center gap-3 py-2">
+            <div className="w-12 h-12 rounded-full flex items-center justify-center" style={{background:C.dangerLight}}><AlertTriangle size={20} color={C.danger}/></div>
+            <p className="text-sm" style={{color:C.text}}>¿Eliminar el pedido de <strong>{delTarget.cliente}</strong>?</p>
+            <div className="flex gap-2 w-full mt-2">
+              <Btn full variant="ghost" onClick={()=>setDelTarget(null)}>No</Btn>
+              <Btn full variant="dark" onClick={()=>{setPedidos(pedidos.filter(p=>p.id!==delTarget.id)); setDelTarget(null); showToast("Pedido eliminado");}}>Sí, eliminar</Btn>
+            </div>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+/* ============================== AGENDA DE SERVICIOS ============================== */
+function activeServiceCategories(profile) {
+  return profile?.serviceCategories?.length ? profile.serviceCategories : [];
+}
+
+function ServiciosTab({ profile, setProfile, servicios, setServicios, showToast }) {
+  const [newCat, setNewCat] = useState("");
+  const [catToDelete, setCatToDelete] = useState(null);
+  const [showForm, setShowForm] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [delTarget, setDelTarget] = useState(null);
+  const cats = activeServiceCategories(profile);
+
+  function addCategory() {
+    const name = newCat.trim();
+    if (!name) return;
+    if (cats.some(c => c.toLowerCase() === name.toLowerCase())) { showToast("Esa categoría ya existe", "error"); return; }
+    setProfile({ ...profile, serviceCategories: [...cats, name] });
+    setNewCat("");
+  }
+
+  return (
+    <div className="flex flex-col gap-6">
+      <Card style={{ padding: 24 }}>
+        <h3 className="font-bold mb-1" style={{ fontFamily: FONT_DISPLAY, color: C.text }}>Categorías de servicio</h3>
+        <p className="text-xs mb-5" style={{ color: C.textMuted }}>Crea tus propias categorías: Depilación, Uñas, Cejas, Maquillaje, Pelo, Botox... lo que ofrezcas.</p>
+        <div className="flex flex-wrap gap-2 mb-5">
+          {cats.map(c => {
+            const cs = styleForCategory(c);
+            return (
+              <div key={c} className="flex items-center gap-2 pl-3 pr-2 py-1.5 rounded-full text-xs font-bold" style={{ background: cs.bg, color: cs.fg }}>
+                <span>{cs.emoji} {c}</span>
+                <button type="button" onClick={() => setCatToDelete(c)} className="w-4 h-4 rounded-full flex items-center justify-center" style={{ background: "rgba(0,0,0,0.12)" }}>
+                  <X size={10} color={cs.fg} />
+                </button>
+              </div>
+            );
+          })}
+          {cats.length === 0 && <p className="text-xs" style={{ color: C.textMuted }}>Aún no tienes categorías. Agrega la primera abajo.</p>}
+        </div>
+        <div className="flex gap-2 max-w-sm">
+          <input style={inputStyle} value={newCat} onChange={e => setNewCat(e.target.value)} placeholder="Ej: Depilación" onKeyDown={e => { if (e.key === "Enter") addCategory(); }} />
+          <Btn icon={Plus} onClick={addCategory}>Agregar</Btn>
+        </div>
+      </Card>
+
+      <Card style={{ padding: 24 }}>
+        <div className="flex items-center justify-between mb-1">
+          <h3 className="font-bold" style={{ fontFamily: FONT_DISPLAY, color: C.text }}>Tus servicios</h3>
+          <Btn icon={Plus} onClick={() => { setEditing(null); setShowForm(true); }} disabled={cats.length === 0}>Nuevo servicio</Btn>
+        </div>
+        <p className="text-xs mb-5" style={{ color: C.textMuted }}>Cada servicio se convierte automáticamente en una opción agendable.</p>
+        {cats.length === 0 ? (
+          <p className="text-xs" style={{ color: C.textMuted }}>Primero crea al menos una categoría arriba.</p>
+        ) : servicios.length === 0 ? (
+          <EmptyState icon={Sparkles} title="Sin servicios todavía" subtitle="Agrega tu primer servicio" />
+        ) : (
+          <div className="flex flex-col gap-2">
+            {servicios.map(s => {
+              const cs = styleForCategory(s.categoria);
+              return (
+                <div key={s.id} className="flex items-center justify-between p-3 rounded-xl" style={{ background: C.cream }}>
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs font-bold px-2 py-1 rounded-md" style={{ background: cs.bg, color: cs.fg }}>{s.categoria}</span>
+                    <div>
+                      <div className="text-sm font-semibold" style={{ color: C.text }}>{s.nombre}</div>
+                      <div className="text-xs" style={{ color: C.textMuted }}>{s.duracionMin} min</div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="font-bold text-sm" style={{ fontFamily: FONT_MONO, color: C.text }}>{formatCLP(s.precio)}</span>
+                    <button onClick={() => { setEditing(s); setShowForm(true); }}><Pencil size={14} color={C.textMuted} /></button>
+                    <button onClick={() => setDelTarget(s)}><Trash2 size={14} color={C.danger} /></button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </Card>
+
+      {showForm && (
+        <ServicioFormModal initial={editing} categorias={cats} onClose={() => setShowForm(false)} onSave={data => {
+          if (editing) setServicios(servicios.map(s => s.id === editing.id ? { ...s, ...data } : s));
+          else setServicios([{ id: uid("srv"), ...data }, ...servicios]);
+          showToast(editing ? "Servicio actualizado" : "Servicio agregado");
+          setShowForm(false);
+        }} />
+      )}
+      {delTarget && (
+        <Modal title="Eliminar servicio" onClose={() => setDelTarget(null)} width={360}>
+          <div className="flex flex-col items-center text-center gap-3 py-2">
+            <div className="w-12 h-12 rounded-full flex items-center justify-center" style={{ background: C.dangerLight }}><AlertTriangle size={20} color={C.danger} /></div>
+            <p className="text-sm" style={{ color: C.text }}>¿Eliminar el servicio <strong>"{delTarget.nombre}"</strong>?</p>
+            <div className="flex gap-2 w-full mt-2">
+              <Btn full variant="ghost" onClick={() => setDelTarget(null)}>No</Btn>
+              <Btn full variant="dark" onClick={() => { setServicios(servicios.filter(s => s.id !== delTarget.id)); setDelTarget(null); showToast("Servicio eliminado"); }}>Sí, eliminar</Btn>
+            </div>
+          </div>
+        </Modal>
+      )}
+      {catToDelete && (
+        <Modal title="Eliminar categoría" onClose={() => setCatToDelete(null)} width={360}>
+          <div className="flex flex-col items-center text-center gap-3 py-2">
+            <div className="w-12 h-12 rounded-full flex items-center justify-center" style={{ background: C.dangerLight }}><AlertTriangle size={20} color={C.danger} /></div>
+            <p className="text-sm" style={{ color: C.text }}>¿Deseas borrar la categoría <strong>"{catToDelete}"</strong>?</p>
+            <p className="text-xs" style={{ color: C.textMuted }}>Los servicios que ya la tenían asignada no se eliminan.</p>
+            <div className="flex gap-2 w-full mt-2">
+              <Btn full variant="ghost" onClick={() => setCatToDelete(null)}>No</Btn>
+              <Btn full variant="dark" onClick={() => { setProfile({ ...profile, serviceCategories: cats.filter(c => c !== catToDelete) }); setCatToDelete(null); showToast("Categoría eliminada"); }}>Sí, borrar</Btn>
+            </div>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+function ServicioFormModal({ initial, categorias, onClose, onSave }) {
+  const [form, setForm] = useState(initial || { nombre: "", categoria: categorias[0] || "", duracionMin: 30, precio: "" });
+  return (
+    <Modal title={initial ? "Editar servicio" : "Nuevo servicio"} onClose={onClose} width={400}>
+      <div className="flex flex-col gap-4">
+        <Field label="Nombre del servicio"><input style={inputStyle} value={form.nombre} onChange={e => setForm({ ...form, nombre: e.target.value })} placeholder="Ej: Depilación cejas" /></Field>
+        <Field label="Categoría"><select style={inputStyle} value={form.categoria} onChange={e => setForm({ ...form, categoria: e.target.value })}>{categorias.map(c => <option key={c}>{c}</option>)}</select></Field>
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="Duración (minutos)"><input type="number" min="5" step="5" style={inputStyle} value={form.duracionMin} onChange={e => setForm({ ...form, duracionMin: e.target.value })} /></Field>
+          <Field label="Precio"><input type="number" min="0" style={inputStyle} value={form.precio} onChange={e => setForm({ ...form, precio: e.target.value })} placeholder="0" /></Field>
+        </div>
+      </div>
+      <div className="flex justify-end gap-2 mt-6">
+        <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
+        <Btn icon={Check} disabled={!form.nombre.trim() || !form.categoria} onClick={() => onSave({ ...form, duracionMin: Number(form.duracionMin) || 30, precio: Number(form.precio) || 0 })}>Guardar</Btn>
+      </div>
+    </Modal>
+  );
+}
+
+function startOfWeek(dateStr) {
+  const d = new Date(dateStr + "T00:00:00");
+  const day = d.getDay();
+  const diff = day === 0 ? -6 : 1 - day; // semana empieza lunes
+  d.setDate(d.getDate() + diff);
+  return d;
+}
+function addDays(date, n) { const d = new Date(date); d.setDate(d.getDate() + n); return d; }
+function toISO(d) { return d.toISOString().slice(0, 10); }
+const DIAS_SEMANA = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
+
+function CitaFormModal({ initial, servicios, users, fecha, onClose, onSave }) {
+  const [form, setForm] = useState(initial || { servicioId: servicios[0]?.id || "", cliente: "", telefono: "", fecha: fecha || todayISO(), hora: "10:00", profesional: users?.[0]?.name || "", notas: "" });
+  const servicioSel = servicios.find(s => s.id === form.servicioId);
+  return (
+    <Modal title={initial ? "Editar cita" : "Nueva cita"} onClose={onClose} width={420}>
+      <div className="flex flex-col gap-4">
+        <Field label="Servicio">
+          <select style={inputStyle} value={form.servicioId} onChange={e => setForm({ ...form, servicioId: e.target.value })}>
+            {servicios.map(s => <option key={s.id} value={s.id}>{s.nombre} · {s.duracionMin}min · {formatCLP(s.precio)}</option>)}
+          </select>
+        </Field>
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="Fecha"><input type="date" style={inputStyle} value={form.fecha} onChange={e => setForm({ ...form, fecha: e.target.value })} /></Field>
+          <Field label="Hora"><input type="time" style={inputStyle} value={form.hora} onChange={e => setForm({ ...form, hora: e.target.value })} /></Field>
+        </div>
+        <Field label="Nombre del cliente"><input style={inputStyle} value={form.cliente} onChange={e => setForm({ ...form, cliente: e.target.value })} placeholder="Ej: Camila Rojas" /></Field>
+        <Field label="Teléfono (opcional)"><input style={inputStyle} value={form.telefono} onChange={e => setForm({ ...form, telefono: e.target.value })} placeholder="+56 9..." /></Field>
+        {users?.length > 0 && (
+          <Field label="Profesional (opcional)">
+            <select style={inputStyle} value={form.profesional} onChange={e => setForm({ ...form, profesional: e.target.value })}>
+              <option value="">Sin asignar</option>
+              {users.map(u => <option key={u.id} value={u.name}>{u.name}</option>)}
+            </select>
+          </Field>
+        )}
+        <Field label="Notas (opcional)"><input style={inputStyle} value={form.notas} onChange={e => setForm({ ...form, notas: e.target.value })} placeholder="Alergias, preferencias, etc." /></Field>
+      </div>
+      <div className="flex justify-end gap-2 mt-6">
+        <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
+        <Btn icon={Check} disabled={!form.cliente.trim() || !servicioSel} onClick={() => onSave({
+          ...form,
+          servicioNombre: servicioSel.nombre, categoria: servicioSel.categoria,
+          duracionMin: servicioSel.duracionMin, precio: servicioSel.precio,
+          estado: initial?.estado || "reservada",
+        })}>Guardar cita</Btn>
+      </div>
+    </Modal>
+  );
+}
+
+function AgendaTab({ citas, setCitas, servicios, users, showToast }) {
+  const [weekStart, setWeekStart] = useState(() => startOfWeek(todayISO()));
+  const [showForm, setShowForm] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [formFecha, setFormFecha] = useState(todayISO());
+  const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
+        <div className="flex items-center gap-2">
+          <button onClick={() => setWeekStart(addDays(weekStart, -7))} className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: C.cream }}><ChevronLeft size={16} color={C.text} /></button>
+          <span className="text-sm font-bold" style={{ color: C.text }}>{formatDate(toISO(days[0]))} — {formatDate(toISO(days[6]))}</span>
+          <button onClick={() => setWeekStart(addDays(weekStart, 7))} className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: C.cream }}><ChevronRight size={16} color={C.text} /></button>
+          <button onClick={() => setWeekStart(startOfWeek(todayISO()))} className="text-xs font-semibold px-2 py-1" style={{ color: C.orange }}>Hoy</button>
+        </div>
+        <Btn icon={Plus} disabled={servicios.length === 0} onClick={() => { setEditing(null); setFormFecha(todayISO()); setShowForm(true); }}>Nueva cita</Btn>
+      </div>
+
+      {servicios.length === 0 && (
+        <div className="flex items-center gap-3 px-4 py-3 rounded-xl mb-5" style={{ background: C.amberLight }}>
+          <AlertTriangle size={16} color={C.amber} />
+          <p className="text-xs" style={{ color: "#92400E" }}>Primero crea al menos un servicio en la pestaña "Servicios" para poder agendar citas.</p>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-7 gap-3">
+        {days.map(d => {
+          const iso = toISO(d);
+          const esHoy = iso === todayISO();
+          const citasDia = citas.filter(c => c.fecha === iso).sort((a, b) => a.hora.localeCompare(b.hora));
+          return (
+            <div key={iso} className="rounded-2xl p-3" style={{ background: esHoy ? C.orangeLight : C.surface, border: `1px solid ${esHoy ? C.orange + "40" : C.border}`, minHeight: 140 }}>
+              <div className="text-xs font-bold mb-2" style={{ color: esHoy ? C.orangeDark : C.textMuted }}>{DIAS_SEMANA[d.getDay() === 0 ? 6 : d.getDay() - 1]} {d.getDate()}</div>
+              <div className="flex flex-col gap-1.5">
+                {citasDia.map(c => {
+                  const cs = styleForCategory(c.categoria);
+                  return (
+                    <button key={c.id} onClick={() => { setEditing(c); setShowForm(true); }} className="text-left p-2 rounded-lg" style={{ background: cs.bg }}>
+                      <div className="text-[11px] font-bold" style={{ color: cs.fg }}>{c.hora} · {c.servicioNombre}</div>
+                      <div className="text-[10px]" style={{ color: cs.fg }}>{c.cliente}</div>
+                    </button>
+                  );
+                })}
+                {citasDia.length === 0 && <span className="text-[11px]" style={{ color: C.textMuted }}>Sin citas</span>}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {showForm && (
+        <CitaFormModal initial={editing} servicios={servicios} users={users} fecha={formFecha} onClose={() => setShowForm(false)} onSave={data => {
+          if (editing) setCitas(citas.map(c => c.id === editing.id ? { ...c, ...data } : c));
+          else setCitas([{ id: uid("cita"), ...data }, ...citas]);
+          showToast(editing ? "Cita actualizada" : "Cita agendada");
+          setShowForm(false);
+        }} />
+      )}
+    </div>
+  );
+}
+
+function CierreMesTab({ citas, servicios }) {
+  const [mes, setMes] = useState(todayISO().slice(0, 7)); // YYYY-MM
+  const citasMes = citas.filter(c => c.fecha.startsWith(mes));
+  const completadas = citasMes.filter(c => c.estado === "completada" || c.estado === "reservada");
+  const totalFacturado = completadas.reduce((s, c) => s + (c.precio || 0), 0);
+  const horasTrabajadas = completadas.reduce((s, c) => s + (c.duracionMin || 0), 0) / 60;
+  const porServicio = {};
+  completadas.forEach(c => { porServicio[c.servicioNombre] = (porServicio[c.servicioNombre] || 0) + 1; });
+  const topServicios = Object.entries(porServicio).sort((a, b) => b[1] - a[1]).slice(0, 6);
+  const chartData = topServicios.map(([name, count]) => ({ name: name.length > 14 ? name.slice(0, 14) + "…" : name, citas: count }));
+
+  return (
+    <div className="flex flex-col gap-5">
+      <Field label="Mes a revisar"><input type="month" style={{ ...inputStyle, maxWidth: 200 }} value={mes} onChange={e => setMes(e.target.value)} /></Field>
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <Card style={{ padding: 18 }}>
+          <div className="text-xs font-semibold mb-1" style={{ color: C.textMuted }}>Total facturado</div>
+          <div className="text-xl font-bold" style={{ fontFamily: FONT_MONO, color: C.success }}>{formatCLP(totalFacturado)}</div>
+        </Card>
+        <Card style={{ padding: 18 }}>
+          <div className="text-xs font-semibold mb-1" style={{ color: C.textMuted }}>Citas del mes</div>
+          <div className="text-xl font-bold" style={{ fontFamily: FONT_MONO, color: C.text }}>{completadas.length}</div>
+        </Card>
+        <Card style={{ padding: 18 }}>
+          <div className="text-xs font-semibold mb-1" style={{ color: C.textMuted }}>Horas trabajadas</div>
+          <div className="text-xl font-bold" style={{ fontFamily: FONT_MONO, color: C.text }}>{horasTrabajadas.toFixed(1)}h</div>
+        </Card>
+        <Card style={{ padding: 18 }}>
+          <div className="text-xs font-semibold mb-1" style={{ color: C.textMuted }}>Servicio estrella</div>
+          <div className="text-sm font-bold truncate" style={{ color: C.text }}>{topServicios[0]?.[0] || "—"}</div>
+        </Card>
+      </div>
+
+      {chartData.length > 0 && (
+        <Card style={{ padding: 24 }}>
+          <h3 className="font-bold mb-4 text-base" style={{ fontFamily: FONT_DISPLAY, color: C.text }}>Servicios más solicitados</h3>
+          <ResponsiveContainer width="100%" height={Math.max(200, chartData.length * 42)}>
+            <BarChart data={chartData} layout="vertical" margin={{ left: 10 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke={C.border} horizontal={false} />
+              <XAxis type="number" allowDecimals={false} tick={{ fontSize: 11, fill: C.textMuted }} />
+              <YAxis type="category" dataKey="name" tick={{ fontSize: 11, fill: C.textMuted }} width={120} />
+              <Tooltip contentStyle={{ borderRadius: 10, border: `1px solid ${C.border}`, fontSize: 12 }} />
+              <Bar dataKey="citas" radius={[0, 6, 6, 0]} fill={C.orange} />
+            </BarChart>
+          </ResponsiveContainer>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+function AgendaView({ profile, setProfile, servicios, setServicios, citas, setCitas, users, showToast }) {
+  const [tab, setTab] = useState("agenda");
+  const TABS = [
+    { id: "agenda", label: "Agenda", icon: Clock },
+    { id: "servicios", label: "Servicios", icon: Sparkles },
+    { id: "cierre", label: "Cierre de mes", icon: BarChart3 },
+  ];
+  return (
+    <div>
+      <PageHeader title="Agenda de servicios" subtitle="Gestiona tus servicios, horas y cierre mensual" />
+      <div className="flex gap-2 mb-6 flex-wrap">
+        {TABS.map(t => (
+          <button key={t.id} onClick={() => setTab(t.id)} className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold"
+            style={{ background: tab === t.id ? C.ink : C.surface, color: tab === t.id ? "#fff" : C.textMuted, border: `1px solid ${C.border}` }}>
+            <t.icon size={13} /> {t.label}
+          </button>
+        ))}
+      </div>
+      {tab === "agenda" && <AgendaTab citas={citas} setCitas={setCitas} servicios={servicios} users={users} showToast={showToast} />}
+      {tab === "servicios" && <ServiciosTab profile={profile} setProfile={setProfile} servicios={servicios} setServicios={setServicios} showToast={showToast} />}
+      {tab === "cierre" && <CierreMesTab citas={citas} servicios={servicios} />}
+    </div>
+  );
+}
+
 function FiadosView({ fiados, setFiados, showToast }) {
   const [tab,  setTab]  = useState("pendientes");
   const [search,setSearch]=useState("");
@@ -1999,9 +2542,11 @@ function ReporteView({ sales, products }) {
 /* ============================== CAJA ============================== */
 function CajaView({ sales, cajaState, setCajaState, showToast, currentUser }) {
   const [closeModal,setCloseModal]=useState(false);
+  const [openModal,setOpenModal]=useState(false);
+  const [openingInput,setOpeningInput]=useState("");
   const [counted,setCounted]=useState("");
-  const [turnos,setTurnos]=useState([]);
   const today=todayISO();
+  const turnos = cajaState.turnos || [];
   const salesToday=sales.filter(s=>s.datetime.slice(0,10)===today);
   const cashSales=salesToday.filter(s=>s.paymentType==="efectivo").reduce((s,x)=>s+x.total,0);
   const expected=cajaState.openingAmount+cashSales;
@@ -2010,16 +2555,18 @@ function CajaView({ sales, cajaState, setCajaState, showToast, currentUser }) {
 
   function abrirCaja() {
     const now = new Date().toISOString();
-    setCajaState({isOpen:true,openedAt:now,openingAmount:20000});
-    setTurnos(t=>[{id:uid("t"),vendor:currentUser.name,apertura:now,cierre:null,ventasTurno:0},...t]);
+    const monto = Number(openingInput)||0;
+    setCajaState({isOpen:true,openedAt:now,openingAmount:monto,turnos:[{id:uid("t"),vendor:currentUser.name,apertura:now,cierre:null,ventasTurno:0,montoApertura:monto,montoContado:null,diferencia:null},...turnos]});
+    setOpenModal(false); setOpeningInput("");
     showToast("Caja abierta");
   }
 
   function cerrarCaja() {
     const ventasTurno = salesToday.reduce((s,x)=>s+x.total,0);
-    setTurnos(t=>t.map((tr,i)=>i===0?{...tr,cierre:new Date().toISOString(),ventasTurno}:tr));
-    setCajaState({...cajaState,isOpen:false});
-    setCloseModal(false);
+    const montoContado = Number(counted)||0;
+    const nuevosTurnos = turnos.map((tr,i)=>i===0?{...tr,cierre:new Date().toISOString(),ventasTurno,montoContado,diferencia:diff}:tr);
+    setCajaState({...cajaState,isOpen:false,turnos:nuevosTurnos});
+    setCloseModal(false); setCounted("");
     showToast("Caja cerrada correctamente");
   }
 
@@ -2035,7 +2582,7 @@ function CajaView({ sales, cajaState, setCajaState, showToast, currentUser }) {
             {cajaState.isOpen && <div className="text-xs mt-0.5 flex items-center gap-1" style={{color:C.teal}}><UserCheck size={11}/> Turno: {currentUser.name}</div>}
           </div>
         </div>
-        {cajaState.isOpen?<Btn variant="dark" onClick={()=>setCloseModal(true)}>Cerrar caja</Btn>:<Btn onClick={abrirCaja}>Abrir caja</Btn>}
+        {cajaState.isOpen?<Btn variant="dark" onClick={()=>setCloseModal(true)}>Cerrar caja</Btn>:<Btn onClick={()=>setOpenModal(true)}>Abrir caja</Btn>}
       </Card>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5">
@@ -2052,19 +2599,32 @@ function CajaView({ sales, cajaState, setCajaState, showToast, currentUser }) {
 
       {turnos.length > 0 && (
         <Card style={{overflow:"hidden"}}>
-          <div className="px-4 py-3 font-bold text-sm" style={{borderBottom:`1px solid ${C.border}`, fontFamily:FONT_DISPLAY, color:C.text}}>Turnos del día</div>
+          <div className="px-4 py-3 font-bold text-sm" style={{borderBottom:`1px solid ${C.border}`, fontFamily:FONT_DISPLAY, color:C.text}}>Turnos recientes</div>
           <table className="w-full text-sm">
-            <thead><tr style={{background:C.cream}}>{["Vendedora","Apertura","Cierre","Ventas del turno"].map(h=><th key={h} className="text-left px-4 py-3 font-semibold text-xs" style={{color:C.textMuted}}>{h}</th>)}</tr></thead>
+            <thead><tr style={{background:C.cream}}>{["Vendedora","Apertura","Cierre","Ventas del turno","Cuadratura"].map(h=><th key={h} className="text-left px-4 py-3 font-semibold text-xs" style={{color:C.textMuted}}>{h}</th>)}</tr></thead>
             <tbody>{turnos.map(t=>(
               <tr key={t.id} style={{borderTop:`1px solid ${C.border}`}}>
                 <td className="px-4 py-3 flex items-center gap-2"><div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white" style={{background:C.orange}}>{t.vendor.split(" ").map(w=>w[0]).join("").slice(0,2)}</div>{t.vendor}</td>
                 <td className="px-4 py-3 text-xs" style={{color:C.textMuted}}>{formatDateTime(t.apertura)}</td>
                 <td className="px-4 py-3 text-xs" style={{color:C.textMuted}}>{t.cierre?formatDateTime(t.cierre):<span style={{color:C.success}}>En turno</span>}</td>
                 <td className="px-4 py-3 font-semibold" style={{fontFamily:FONT_MONO}}>{formatCLP(t.ventasTurno)}</td>
+                <td className="px-4 py-3 text-xs font-semibold" style={{color:t.diferencia==null?C.textMuted:t.diferencia===0?C.success:t.diferencia>0?C.teal:C.danger}}>
+                  {t.diferencia==null?"—":t.diferencia===0?"Cuadrada ✓":t.diferencia>0?`+${formatCLP(t.diferencia)}`:`-${formatCLP(-t.diferencia)}`}
+                </td>
               </tr>
             ))}</tbody>
           </table>
         </Card>
+      )}
+
+      {openModal&&(
+        <Modal title="Abrir caja" onClose={()=>setOpenModal(false)} width={380}>
+          <Field label="¿Con cuánto efectivo abres la caja?"><input type="number" min="0" style={inputStyle} value={openingInput} onChange={e=>setOpeningInput(e.target.value)} placeholder="0" autoFocus/></Field>
+          <div className="flex justify-end gap-2 mt-6">
+            <Btn variant="ghost" onClick={()=>setOpenModal(false)}>Cancelar</Btn>
+            <Btn onClick={abrirCaja} disabled={openingInput===""}>Abrir caja</Btn>
+          </div>
+        </Modal>
       )}
 
       {closeModal&&(
@@ -2082,12 +2642,14 @@ function CajaView({ sales, cajaState, setCajaState, showToast, currentUser }) {
 }
 
 /* ============================== CONFIGURAR ============================== */
-function ConfigurarView({ profile, setProfile, showToast, users, currentUser, onAddUser, onDeleteUser }) {
+function ConfigurarView({ profile, setProfile, showToast, users, currentUser, onAddUser, onDeleteUser, onUpdateUser }) {
   const [tab,setTab]=useState("perfil");
   const [form,setForm]=useState(profile);
   const [newUser,setNewUser]=useState({name:"",pin:"",role:"vendedor"});
   const [newCat,setNewCat]=useState("");
   const [catToDelete,setCatToDelete]=useState(null);
+  const [editingPin, setEditingPin] = useState(false);
+  const [pinValue, setPinValue] = useState("");
   const currentCategories = activeCategories(profile);
   function addCategory() {
     const name = newCat.trim();
@@ -2151,17 +2713,32 @@ function ConfigurarView({ profile, setProfile, showToast, users, currentUser, on
               <h3 className="font-bold mb-1" style={{fontFamily:FONT_DISPLAY,color:C.text}}>Usuarios</h3>
               <p className="text-xs mb-4" style={{color:C.textMuted}}>Gestiona quién tiene acceso y qué puede hacer</p>
               {users.map(u=>(
-                <div key={u.id} className="flex items-center justify-between p-3 rounded-xl mb-2" style={{background:C.cream}}>
+                <div key={u.id} className="flex items-center justify-between p-3 rounded-xl mb-2 flex-wrap gap-2" style={{background:C.cream}}>
                   <div className="flex items-center gap-3">
                     <div className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-white" style={{background:u.role==="admin"?C.orange:C.teal}}>{u.name.split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase()}</div>
-                    <div><div className="text-sm font-semibold" style={{color:C.text}}>{u.name}</div><div className="text-xs" style={{color:C.textMuted}}>PIN: {"•".repeat(u.pin.length)} · {u.role==="admin"?"Administrador":"Vendedor"}</div></div>
+                    <div><div className="text-sm font-semibold" style={{color:C.text}}>{u.name}</div><div className="text-xs" style={{color:C.textMuted}}>{u.pin ? `PIN: ${"•".repeat(u.pin.length)}` : "Sin PIN configurado"} · {u.role==="admin"?"Administrador":"Vendedor"}</div></div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs px-2 py-1 rounded-md font-medium" style={{background:u.role==="admin"?C.orangeLight:C.tealLight,color:u.role==="admin"?C.orangeDark:C.teal}}>{u.role==="admin"?"Admin":"Vendedor"}</span>
-                    {u.id!==currentUser.id&&<button onClick={()=>onDeleteUser(u.id)} className="p-1.5 rounded-lg hover:bg-black/5"><Trash2 size={14} color={C.danger}/></button>}
-                  </div>
+                  {u.id===currentUser.id && editingPin ? (
+                    <div className="flex items-center gap-2">
+                      <input type="password" maxLength={4} style={{...inputStyle,width:90}} value={pinValue} onChange={e=>setPinValue(e.target.value.replace(/\D/g,"").slice(0,4))} placeholder="4 dígitos" autoFocus />
+                      <Btn size="sm" disabled={pinValue.length!==4} onClick={()=>{onUpdateUser(u.id,{pin:pinValue}); setEditingPin(false); setPinValue("");}}>Guardar</Btn>
+                      <button onClick={()=>{setEditingPin(false);setPinValue("");}} className="text-xs font-semibold" style={{color:C.textMuted}}>Cancelar</button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs px-2 py-1 rounded-md font-medium" style={{background:u.role==="admin"?C.orangeLight:C.tealLight,color:u.role==="admin"?C.orangeDark:C.teal}}>{u.role==="admin"?"Admin":"Vendedor"}</span>
+                      {u.id===currentUser.id && <button onClick={()=>{setEditingPin(true);setPinValue("");}} className="text-xs font-semibold" style={{color:C.orange}}>{u.pin?"Cambiar PIN":"Crear mi PIN"}</button>}
+                      {u.id!==currentUser.id&&<button onClick={()=>onDeleteUser(u.id)} className="p-1.5 rounded-lg hover:bg-black/5"><Trash2 size={14} color={C.danger}/></button>}
+                    </div>
+                  )}
                 </div>
               ))}
+              {users.find(u=>u.id===currentUser.id)?.pin ? null : (
+                <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl mb-3" style={{ background: C.amberLight }}>
+                  <AlertTriangle size={14} color={C.amber} className="shrink-0" />
+                  <p className="text-xs" style={{ color: "#92400E" }}>Crea tu PIN arriba para poder volver a tu cuenta luego de usar "Cambiar de usuario".</p>
+                </div>
+              )}
               <div className="mt-4 p-4 rounded-xl" style={{border:`1px dashed ${C.border}`}}>
                 <p className="text-xs font-semibold mb-3" style={{color:C.text}}>Agregar nuevo usuario</p>
                 <div className="grid grid-cols-2 gap-3 mb-3">
@@ -3206,9 +3783,12 @@ export default function App({ session, onLogout, isOwner, onOpenAdmin }) {
   const [fiados,      setFiados]      = useState([]);
   const [gastos,      setGastos]      = useState([]);
   const [proveedores, setProveedores] = useState([]);
+  const [pedidos, setPedidos] = useState([]);
+  const [servicios, setServicios] = useState([]);
+  const [citas, setCitas] = useState([]);
   const [counters,    setCounters]    = useState({ voucher: 1000, boleta: 8800 });
-  const [cajaState,   setCajaState]   = useState({ isOpen: false, openedAt: new Date().toISOString(), openingAmount: 0 });
-  const [profile,     setProfile]     = useState({ name: "Mi Minimarket", rut: "", address: "", comuna: "", region: "", size: "50 a 100 metros cuadrados", type: "minimarket", modules: ["inventario"], categories: [], meta: null, onboardingCompleted: false, logoUrl: "" });
+  const [cajaState,   setCajaState]   = useState({ isOpen: false, openedAt: new Date().toISOString(), openingAmount: 0, turnos: [] });
+  const [profile,     setProfile]     = useState({ name: "Mi Minimarket", rut: "", address: "", comuna: "", region: "", size: "50 a 100 metros cuadrados", type: "minimarket", modules: ["inventario"], categories: [], meta: null, onboardingCompleted: false, logoUrl: "", serviceCategories: [] });
   const [profileLoaded, setProfileLoaded] = useState(false);
 
   // Cargar el perfil del negocio guardado en Supabase al entrar
@@ -3224,15 +3804,19 @@ export default function App({ session, onLogout, isOwner, onOpenAdmin }) {
         setProfile({
           name: data.name || "Mi Minimarket", rut: data.rut || "", address: data.address || "",
           comuna: data.comuna || "", region: data.region || "", size: data.size || "50 a 100 metros cuadrados",
-          type: data.type || "minimarket", modules: data.modules || ["inventario"], categories: data.categories || [], meta: data.meta || null, onboardingCompleted: data.onboarding_completed || false, logoUrl: data.logo_url || "",
+          type: data.type || "minimarket", modules: data.modules || ["inventario"], categories: data.categories || [], meta: data.meta || null, onboardingCompleted: data.onboarding_completed || false, logoUrl: data.logo_url || "", serviceCategories: data.service_categories || [],
         });
         if (data.products)    setProducts(data.products);
         if (data.sales)       setSales(data.sales);
         if (data.fiados)      setFiados(data.fiados);
         if (data.gastos)      setGastos(data.gastos);
         if (data.proveedores) setProveedores(data.proveedores);
+        if (data.pedidos)     setPedidos(data.pedidos);
+        if (data.servicios)   setServicios(data.servicios);
+        if (data.citas)       setCitas(data.citas);
         if (data.counters)    setCounters(data.counters);
         if (data.caja_state)  setCajaState(data.caja_state);
+        if (data.users && data.users.length) setUsers(data.users);
       }
       setProfileLoaded(true);
     })();
@@ -3246,15 +3830,15 @@ export default function App({ session, onLogout, isOwner, onOpenAdmin }) {
         user_id: session.user.id,
         email: session.user.email,
         name: profile.name, rut: profile.rut, address: profile.address, comuna: profile.comuna,
-        region: profile.region, size: profile.size, type: profile.type, modules: profile.modules, categories: profile.categories || [], meta: profile.meta || null, onboarding_completed: profile.onboardingCompleted || false, logo_url: profile.logoUrl || "",
-        products, sales, fiados, gastos, proveedores, counters, caja_state: cajaState,
+        region: profile.region, size: profile.size, type: profile.type, modules: profile.modules, categories: profile.categories || [], meta: profile.meta || null, onboarding_completed: profile.onboardingCompleted || false, logo_url: profile.logoUrl || "", service_categories: profile.serviceCategories || [],
+        products, sales, fiados, gastos, proveedores, counters, caja_state: cajaState, users, pedidos, servicios, citas,
         updated_at: new Date().toISOString(),
       }, { onConflict: "user_id" }).then(({ error }) => {
-        if (error) console.error("Error guardando datos del negocio:", error);
+        if (error) { console.error("Error guardando datos del negocio:", error); showToast("No se pudo guardar — revisa tu conexión, reintentaremos", "error"); }
       });
     }, 700);
     return () => clearTimeout(t);
-  }, [profile, products, sales, fiados, gastos, proveedores, counters, cajaState, profileLoaded, session?.user?.id]);
+  }, [profile, products, sales, fiados, gastos, proveedores, counters, cajaState, users, pedidos, servicios, citas, profileLoaded, session?.user?.id]);
 
   const [toast,       setToast]       = useState(null);
   const [onboarding,  setOnboarding]  = useState(false);
@@ -3275,6 +3859,7 @@ export default function App({ session, onLogout, isOwner, onOpenAdmin }) {
   }
   function addUser(u) { setUsers([...users, { id: uid("u"), ...u }]); showToast("Usuario creado"); }
   function deleteUser(id) { setUsers(users.filter(u => u.id !== id)); showToast("Usuario eliminado"); }
+  function updateUser(id, changes) { setUsers(users.map(u => u.id === id ? { ...u, ...changes } : u)); showToast("PIN actualizado"); }
 
   const viewProps = { products, setProducts, cart, setCart, sales, setSales, fiados, setFiados, profile, setProfile, counters, setCounters, cajaState, setCajaState, showToast, setView };
 
@@ -3293,10 +3878,15 @@ export default function App({ session, onLogout, isOwner, onOpenAdmin }) {
   // así solo aparece la primera vez de verdad, no cada vez que recargas la página.
   useEffect(() => {
     if (!currentUser && session?.user && profileLoaded) {
-      const nombre = session.user.email ? session.user.email.split("@")[0] : "Admin";
-      const u = { id: session.user.id, name: nombre.charAt(0).toUpperCase() + nombre.slice(1), role: "admin" };
-      setUsers([u]);
-      setCurrentUser(u);
+      const existingAdmin = users.find(u => u.id === session.user.id);
+      if (existingAdmin) {
+        setCurrentUser(existingAdmin);
+      } else {
+        const nombre = session.user.email ? session.user.email.split("@")[0] : "Admin";
+        const u = { id: session.user.id, name: nombre.charAt(0).toUpperCase() + nombre.slice(1), role: "admin", pin: "" };
+        setUsers([u, ...users]);
+        setCurrentUser(u);
+      }
       if (!profile.onboardingCompleted) setOnboarding(true);
     }
   }, [session, currentUser, profileLoaded, profile.onboardingCompleted]);
@@ -3316,17 +3906,20 @@ export default function App({ session, onLogout, isOwner, onOpenAdmin }) {
       {view === "venta"                                       && <VentaView {...viewProps} />}
       {view === "reporte"    && currentUser.role === "admin" && <ReporteView sales={sales} products={products} />}
       {view === "contabilidad" && currentUser.role === "admin" && <ContabilidadView sales={sales} products={products} gastos={gastos} setGastos={setGastos} proveedores={proveedores} setProveedores={setProveedores} fiados={fiados} showToast={showToast} />}
-      {view === "caja"       && currentUser.role === "admin" && <CajaView sales={sales} cajaState={cajaState} setCajaState={setCajaState} showToast={showToast} currentUser={currentUser} />}
-      {view === "fiados"     && currentUser.role === "admin" && <FiadosView fiados={fiados} setFiados={setFiados} showToast={showToast} />}
+      {view === "caja"       && (currentUser.role === "admin" || currentUser.role === "vendedor") && <CajaView sales={sales} cajaState={cajaState} setCajaState={setCajaState} showToast={showToast} currentUser={currentUser} />}
+      {view === "pedidos"    && (currentUser.role === "admin" || currentUser.role === "vendedor") && profile.modules?.includes("pedidos") && <PedidosView pedidos={pedidos} setPedidos={setPedidos} showToast={showToast} />}
+      {view === "agenda"     && (currentUser.role === "admin" || currentUser.role === "vendedor") && profile.modules?.includes("agenda") && <AgendaView profile={profile} setProfile={setProfile} servicios={servicios} setServicios={setServicios} citas={citas} setCitas={setCitas} users={users} showToast={showToast} />}
+      {view === "fiados"     && (currentUser.role === "admin" || currentUser.role === "vendedor") && <FiadosView fiados={fiados} setFiados={setFiados} showToast={showToast} />}
       {view === "boletas"                                     && <DetalleBoletaView sales={sales} setSales={setSales} products={products} setProducts={setProducts} showToast={showToast} />}
-      {view === "configurar" && currentUser.role === "admin" && <ConfigurarView profile={profile} setProfile={setProfile} showToast={showToast} users={users} currentUser={currentUser} onAddUser={addUser} onDeleteUser={deleteUser} />}
+      {view === "configurar" && currentUser.role === "admin" && <ConfigurarView profile={profile} setProfile={setProfile} showToast={showToast} users={users} currentUser={currentUser} onAddUser={addUser} onDeleteUser={deleteUser} onUpdateUser={updateUser} />}
       {view === "tutoriales"                                  && <TutorialesView />}
       {view === "ecommerce"  && currentUser.role === "admin" && <EcommerceView />}
       {view === "contacto"                                    && <ContactanosView />}
     </div>
   );
 
-  const navProps = { view, setView, currentUser, onLogout: handleLogout, profile, cajaState, products, fiados, sales, isOwner, onOpenAdmin };
+  const [switchingUser, setSwitchingUser] = useState(false);
+  const navProps = { view, setView, currentUser, onLogout: handleLogout, onSwitchUser: ()=>setSwitchingUser(true), profile, cajaState, products, fiados, sales, isOwner, onOpenAdmin };
 
   return (
     <div style={{ fontFamily: FONT_BODY, background: C.cream, minHeight: "100vh" }}>
@@ -3353,6 +3946,17 @@ export default function App({ session, onLogout, isOwner, onOpenAdmin }) {
         </div>
       )}
       <Toast toast={toast} />
+      {switchingUser && (
+        <div style={{ position:"fixed", inset:0, zIndex:100, background:"#F8FAFC" }}>
+          <LoginScreen users={users} onCancel={()=>setSwitchingUser(false)} onLogin={u=>{
+            setCurrentUser(u);
+            setSwitchingUser(false);
+            const fv = NAV_ITEMS.find(n => n.roles.includes(u.role));
+            setView(fv?.id || "venta");
+            showToast(`Hola, ${u.name.split(" ")[0]} 👋`);
+          }} />
+        </div>
+      )}
       {onboarding && (
         <OnboardingWizard
           profile={profile}
