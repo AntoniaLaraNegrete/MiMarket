@@ -9,7 +9,12 @@
     "@supabase/supabase-js": "^2.39.0",
     "recharts": "^2.10.0",
     "lucide-react": "^0.383.0",
-    "barcode-detector": "^3.2.2"
+    "barcode-detector": "^3.2.2",
+    "workbox-core": "^6.6.0",
+    "workbox-expiration": "^6.6.0",
+    "workbox-precaching": "^6.6.0",
+    "workbox-routing": "^6.6.0",
+    "workbox-strategies": "^6.6.0"
   },
   "scripts": {
     "start": "react-scripts start",
