@@ -2856,37 +2856,18 @@ function TutorialesView() {
 
 /* ============================== ECOMMERCE ============================== */
 function EcommerceView() {
-  const [estado,setEstado]=useState("Todos");
-  const [name,setName]=useState("");
-  const [sel,setSel]=useState(null);
-  const STATUS_STYLE={Pendiente:{bg:C.amberLight,fg:C.amber},Confirmado:{bg:C.navyLight,fg:C.navy},Entregado:{bg:C.successLight,fg:C.success},Cancelado:{bg:C.dangerLight,fg:C.danger}};
-  const filtered=SEED_ECOMMERCE.filter(o=>(estado==="Todos"||o.status===estado)&&o.client.toLowerCase().includes(name.toLowerCase()));
   return (
     <div>
       <PageHeader title="Ecommerce" subtitle="Gestión de pedidos online"/>
-      <Card style={{padding:20}} className="mb-5">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <Field label="Estado"><select style={inputStyle} value={estado} onChange={e=>setEstado(e.target.value)}>{["Todos","Pendiente","Confirmado","Entregado","Cancelado"].map(s=><option key={s}>{s}</option>)}</select></Field>
-          <Field label="Cliente"><input style={inputStyle} placeholder="Buscar..." value={name} onChange={e=>setName(e.target.value)}/></Field>
+      <Card style={{padding:40}}>
+        <div className="flex flex-col items-center text-center">
+          <div className="w-14 h-14 rounded-2xl flex items-center justify-center mb-4" style={{background:C.orangeLight}}><Globe size={26} color={C.orange}/></div>
+          <h3 className="font-bold text-base mb-2" style={{fontFamily:FONT_DISPLAY,color:C.text}}>Próximamente</h3>
+          <p className="text-sm max-w-sm" style={{color:C.textMuted}}>
+            Aquí podrás conectar tu tienda online y ver los pedidos que te hagan tus clientes por internet, todo en un solo lugar. Estamos trabajando en esta función.
+          </p>
         </div>
       </Card>
-      <Card style={{overflow:"hidden"}}>
-        {filtered.length===0?<EmptyState icon={Globe} title="No hay pedidos"/>:(
-          <table className="w-full text-sm">
-            <thead><tr style={{background:C.cream}}>{["Cliente","Fecha","Estado","Total",""].map(h=><th key={h} className="text-left px-4 py-3 font-semibold text-xs" style={{color:C.textMuted}}>{h}</th>)}</tr></thead>
-            <tbody>{filtered.map(o=>(
-              <tr key={o.id} style={{borderTop:`1px solid ${C.border}`}}>
-                <td className="px-4 py-3 font-medium">{o.client}</td>
-                <td className="px-4 py-3" style={{color:C.textMuted}}>{formatDate(o.date)}</td>
-                <td className="px-4 py-3"><span className="px-2 py-1 rounded-md text-xs font-semibold" style={{background:STATUS_STYLE[o.status].bg,color:STATUS_STYLE[o.status].fg}}>{o.status}</span></td>
-                <td className="px-4 py-3 font-bold" style={{fontFamily:FONT_MONO}}>{formatCLP(o.total)}</td>
-                <td className="px-4 py-3 text-right"><Btn size="sm" variant="outline" onClick={()=>setSel(o)}>Ver</Btn></td>
-              </tr>
-            ))}</tbody>
-          </table>
-        )}
-      </Card>
-      {sel&&<Modal title={"Pedido de "+sel.client} onClose={()=>setSel(null)} width={400}><p className="text-xs mb-3" style={{color:C.textMuted}}>{sel.phone} · {formatDate(sel.date)}</p><div className="flex flex-col gap-2 mb-3">{sel.items.map((it,i)=><div key={i} className="flex justify-between text-sm px-3 py-2 rounded-lg" style={{background:C.cream}}><span>{it.qty}x {it.name}</span></div>)}</div><div className="flex justify-between font-bold text-sm pt-3" style={{borderTop:`1px solid ${C.border}`}}><span>Total</span><span>{formatCLP(sel.total)}</span></div></Modal>}
     </div>
   );
 }
@@ -3155,13 +3136,11 @@ function ContabilidadView({ sales, products, gastos, setGastos, proveedores, set
 - Proyección próximo mes: ventas ${formatCLP(proyeccion.ventas)}, utilidad ${formatCLP(proyeccion.utilidad)}
 - Punto de equilibrio: ${formatCLP(Number(puntoEquilibrio))}`;
 
-      const response = await fetch("https://api.anthropic.com/v1/messages", {
+      const response = await fetch("/api/mia", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: "claude-sonnet-4-6",
-          max_tokens: 1000,
-          system: `Eres una asesora financiera amigable y cercana para dueñas de minimarkets en Chile. Tu nombre es "Mia". Hablas en español chileno, de forma cálida y simple. Siempre quieres lo mejor para el negocio. Das consejos prácticos y concretos basados en los datos reales del negocio. Usas emojis ocasionalmente. Cuando los números son buenos los celebras, cuando hay problemas los señalas con cariño y soluciones. Formato de moneda chilena ($ con puntos). Aquí están los datos actuales:\n\n${context}`,
+          context,
           messages: [...iaMessages.slice(-6).filter(m => m.role !== "assistant" || iaMessages.indexOf(m) > 0), { role: "user", content: userMsg }]
         })
       });
