@@ -3769,6 +3769,7 @@ export default function App({ session, onLogout, isOwner, onOpenAdmin }) {
   const [cajaState,   setCajaState]   = useState({ isOpen: false, openedAt: new Date().toISOString(), openingAmount: 0, turnos: [] });
   const [profile,     setProfile]     = useState({ name: "Mi Minimarket", rut: "", address: "", comuna: "", region: "", size: "50 a 100 metros cuadrados", type: "minimarket", modules: ["inventario"], categories: [], meta: null, onboardingCompleted: false, logoUrl: "", serviceCategories: [] });
   const [profileLoaded, setProfileLoaded] = useState(false);
+  const [switchingUser, setSwitchingUser] = useState(false);
 
   // Cargar el perfil del negocio guardado en Supabase al entrar
   useEffect(() => {
@@ -3897,7 +3898,6 @@ export default function App({ session, onLogout, isOwner, onOpenAdmin }) {
     </div>
   );
 
-  const [switchingUser, setSwitchingUser] = useState(false);
   const navProps = { view, setView, currentUser, onLogout: handleLogout, onSwitchUser: ()=>setSwitchingUser(true), profile, cajaState, products, fiados, sales, isOwner, onOpenAdmin };
 
   return (
