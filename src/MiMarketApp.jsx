@@ -2669,7 +2669,7 @@ function ConfigurarView({ profile, setProfile, showToast, users, currentUser, on
     <div>
       <PageHeader title="Configuración" subtitle="Administra la información de tu negocio"/>
       <div className="flex gap-6 items-start flex-col md:flex-row">
-        <Card style={{padding:8,width:"100%"}} className="md:w-60 shrink-0">
+        <Card style={{padding:8}} className="w-full md:w-60 shrink-0">
           {tabs.map(t=>(
             <button key={t.id} onClick={()=>setTab(t.id)} className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm mb-1"
               style={{background:tab===t.id?C.orangeLight:"transparent",color:tab===t.id?C.orangeDark:C.text,fontWeight:tab===t.id?600:500}}>
@@ -2678,7 +2678,7 @@ function ConfigurarView({ profile, setProfile, showToast, users, currentUser, on
             </button>
           ))}
         </Card>
-        <Card style={{padding:24,flex:1,width:"100%"}}>
+        <Card style={{padding:24,flex:1}} className="w-full md:w-auto">
           {tab==="perfil"&&(
             <>
               <h3 className="font-bold mb-4" style={{fontFamily:FONT_DISPLAY,color:C.text}}>Perfil del negocio</h3>
