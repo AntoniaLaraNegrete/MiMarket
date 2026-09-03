@@ -554,7 +554,7 @@ function LoginScreen({ users, onLogin, onCancel }) {
           <X size={16} color={C.textMuted} />
         </button>
       )}
-      <div className="flex flex-col items-center mb-8 sm:mb-10">
+      <div className="flex flex-col items-center mb-4 sm:mb-6">
         <div className="w-16 h-16 rounded-3xl flex items-center justify-center mb-4"
           style={{ background: PREMIUM_GRADIENT, boxShadow: `0 12px 28px ${C.orange}40` }}>
           <Store size={28} color="#fff" />
@@ -595,22 +595,22 @@ function LoginScreen({ users, onLogin, onCancel }) {
         </div>
       ) : (
         <div className="w-full max-w-xs sm:max-w-sm flex flex-col items-center">
-          <div className="w-full rounded-3xl p-6 sm:p-7 flex flex-col items-center" style={{
+          <div className="w-full rounded-3xl p-5 sm:p-6 flex flex-col items-center" style={{
             background: "#fff",
             boxShadow: "0 24px 60px -12px rgba(15,23,41,0.12), 0 4px 14px rgba(15,23,41,0.04)",
             border: `1px solid ${C.border}`,
           }}>
             <button onClick={() => { setSel(null); setPin(""); setErr(""); }}
-              className="flex items-center gap-1 text-xs font-semibold self-start mb-6" style={{ color: C.textMuted }}>
+              className="flex items-center gap-1 text-xs font-semibold self-start mb-4" style={{ color: C.textMuted }}>
               <ChevronLeft size={14} /> Volver
             </button>
 
-            <div className="w-16 h-16 rounded-2xl flex items-center justify-center font-bold text-white text-xl mb-3"
+            <div className="w-14 h-14 rounded-2xl flex items-center justify-center font-bold text-white text-lg mb-2"
               style={{ background: sel.role === "admin" ? PREMIUM_GRADIENT : C.teal, boxShadow: `0 10px 24px ${sel.role === "admin" ? C.orange : C.teal}35` }}>
               {sel.name.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase()}
             </div>
             <div className="font-bold text-base mb-1" style={{ fontFamily: FONT_DISPLAY, color: C.text }}>{sel.name}</div>
-            <div className="text-xs mb-7" style={{ color: C.textMuted }}>Ingresa tu PIN de 4 dígitos</div>
+            <div className="text-xs mb-4" style={{ color: C.textMuted }}>Ingresa tu PIN de 4 dígitos</div>
 
             <div className="flex gap-3 mb-2">
               {[0, 1, 2, 3].map(i => (
@@ -619,13 +619,13 @@ function LoginScreen({ users, onLogin, onCancel }) {
               ))}
             </div>
             {err ? (
-              <p className="text-xs font-medium mb-3 text-center" style={{ color: C.danger }}>{err}</p>
-            ) : <div className="mb-3 h-4" />}
+              <p className="text-xs font-medium mb-2 text-center" style={{ color: C.danger }}>{err}</p>
+            ) : <div className="mb-2 h-3" />}
 
-            <div className="grid grid-cols-3 gap-3 w-full max-w-[240px]">
+            <div className="grid grid-cols-3 gap-2 w-full max-w-[220px]">
               {["1", "2", "3", "4", "5", "6", "7", "8", "9", "", "0", "⌫"].map(d => (
                 <button key={d} onClick={() => d === "⌫" ? setPin(p => p.slice(0, -1)) : d !== "" ? digit(d) : null} disabled={d === ""}
-                  className="h-14 rounded-2xl font-bold text-lg disabled:opacity-0 transition-all active:scale-95"
+                  className="h-12 rounded-2xl font-bold text-lg disabled:opacity-0 transition-all active:scale-95"
                   style={{
                     background: d === "⌫" ? C.cream : "#fff", color: C.text,
                     border: `1.5px solid ${C.border}`, fontFamily: FONT_MONO,
@@ -3926,7 +3926,7 @@ export default function App({ session, onLogout, isOwner, onOpenAdmin }) {
       )}
       <Toast toast={toast} />
       {switchingUser && (
-        <div style={{ position:"fixed", inset:0, zIndex:100, background:"#F8FAFC" }}>
+        <div style={{ position:"fixed", inset:0, zIndex:100, background:"#F8FAFC", overflowY:"auto" }}>
           <LoginScreen users={users} onCancel={()=>setSwitchingUser(false)} onLogin={u=>{
             setCurrentUser(u);
             setSwitchingUser(false);
