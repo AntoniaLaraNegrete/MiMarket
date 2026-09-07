@@ -3132,21 +3132,21 @@ const GASTO_CATS = ["Arriendo","Luz","Agua","Gas","Internet / Teléfono","Sueldo
 const PIE_COLORS = ["#F97316","#FB923C","#FCD34D","#34D399","#60A5FA","#A78BFA","#F472B6","#4ADE80","#38BDF8","#C084FC"];
 
 const FIN_EXPLAIN = {
-  "Efectivo en caja": "Es el dinero que has recibido en efectivo por tus ventas. Representa la plata que tienes disponible ahora mismo, la que podrías retirar o usar hoy sin esperar nada.",
-  "Cuentas por cobrar (Fiados)": "Es el dinero que tus clientes te deben por ventas al fiado que todavía no te han pagado. Aunque ya lo \"vendiste\", ese dinero todavía no está en tu bolsillo.",
-  "Valor inventario": "Es cuánto vale, al precio que TÚ pagaste (no al que vendes), todo el stock de productos que tienes guardado sin vender. Es plata que ya gastaste pero que sigue \"guardada\" en forma de mercadería.",
-  "Ingresos por transferencia / tarjeta": "Ventas que te pagaron por transferencia, débito o crédito, en vez de efectivo. Este dinero suele demorar uno o más días en llegar a tu cuenta bancaria.",
-  "Cuentas por pagar (proveedores)": "Es lo que tú le debes a tus proveedores por mercadería que ya recibiste pero aún no has pagado. Es una deuda tuya, lo contrario a las Cuentas por cobrar.",
-  "Gastos pendientes": "Gastos del negocio (luz, arriendo, etc.) que ya se generaron pero todavía no pagas. Aunque no hayan salido de tu bolsillo aún, ya son un compromiso.",
-  "Capital invertido": "El dinero total que has puesto o gastado para mantener funcionando tu negocio (compras, arriendo, etc.), sumado desde que empezaste a registrar tus gastos aquí.",
-  "Utilidad acumulada": "La ganancia total que ha generado tu negocio hasta ahora, después de restar todos los costos. Es tu \"marcador\" histórico: si es positivo, en general el negocio ha ganado más de lo que ha gastado.",
-  "Ingresos por ventas": "El total de dinero que han generado todas tus ventas, sin restar ningún costo todavía. Es la \"torta completa\", antes de descontar nada.",
-  "Costo de mercadería vendida": "Lo que a TI te costó comprar los productos que ya vendiste (no lo que los cobraste al cliente). La diferencia entre esto y tus ventas es tu ganancia bruta.",
-  "UTILIDAD BRUTA": "Lo que ganas por vender, antes de restar gastos como arriendo, luz o sueldos. Se calcula: Ventas menos el Costo de mercadería vendida.",
-  "Gastos operacionales": "Gastos del día a día para mantener el negocio funcionando: arriendo, luz, sueldos, insumos de aseo, etc. — todo lo que no es comprar mercadería para vender.",
-  "UTILIDAD OPERACIONAL / NETA": "Tu ganancia real final, después de restar TODOS los costos y gastos del negocio. Este es el número que realmente importa: cuánto te queda de verdad.",
-  "Margen bruto": "De cada $100 que vendes, cuántos te quedan después de pagar solo la mercadería (sin contar arriendo, luz, etc). Mientras más alto, mejor compras o vendes.",
-  "Margen neto": "De cada $100 que vendes, cuántos te quedan realmente en el bolsillo después de TODOS los gastos. Es el indicador más honesto de qué tan rentable es tu negocio.",
+  "Efectivo en caja": "Monto recibido en efectivo por ventas. Corresponde al dinero disponible de forma inmediata.",
+  "Cuentas por cobrar (Fiados)": "Monto que los clientes deben por ventas al fiado que aún no han pagado.",
+  "Valor inventario": "Valor del stock disponible, calculado al precio de compra (no al precio de venta).",
+  "Ingresos por transferencia / tarjeta": "Ventas pagadas por transferencia, débito o crédito. Este dinero suele demorar uno o más días hábiles en depositarse.",
+  "Cuentas por pagar (proveedores)": "Monto adeudado a proveedores por mercadería ya recibida y aún no pagada.",
+  "Gastos pendientes": "Gastos del negocio (arriendo, luz, etc.) ya generados y todavía no pagados.",
+  "Capital invertido": "Monto total destinado a mantener el funcionamiento del negocio, según los gastos registrados.",
+  "Utilidad acumulada": "Ganancia total generada por el negocio hasta la fecha, después de descontar todos los costos.",
+  "Ingresos por ventas": "Monto total generado por las ventas, sin descontar costos.",
+  "Costo de mercadería vendida": "Costo de compra de los productos ya vendidos (no el precio al que se vendieron).",
+  "UTILIDAD BRUTA": "Ganancia obtenida por las ventas, antes de descontar gastos operacionales como arriendo, luz o sueldos. Se calcula restando el Costo de mercadería vendida a los Ingresos por ventas.",
+  "Gastos operacionales": "Gastos necesarios para el funcionamiento diario del negocio: arriendo, luz, sueldos, insumos, entre otros.",
+  "UTILIDAD OPERACIONAL / NETA": "Ganancia final del negocio, después de descontar todos los costos y gastos.",
+  "Margen bruto": "Porcentaje de cada venta que corresponde a ganancia antes de gastos operacionales.",
+  "Margen neto": "Porcentaje de cada venta que corresponde a ganancia final, después de todos los gastos.",
 };
 
 function InfoRow({ label, value, color, bold=false, border=false, suffix }) {
@@ -3654,12 +3654,12 @@ function ContabilidadView({ sales, products, gastos, setGastos, proveedores, set
       {tab === "ratios" && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {[
-            { label: "Margen Bruto", value: margenBruto + "%", desc: "De cada $100 que vendes, esto te queda después de pagar solo la mercadería (sin arriendo, luz, etc). Sobre 25% suele ser saludable para un minimarket.", good: Number(margenBruto) > 25 },
-            { label: "Margen Neto", value: margenNeto + "%", desc: "De cada $100 que vendes, esto es lo que realmente te queda en el bolsillo después de TODOS los gastos del negocio.", good: Number(margenNeto) > 10 },
-            { label: "Punto de Equilibrio", value: formatCLP(Number(puntoEquilibrio)), desc: "Cuánto necesitas vender este período para cubrir tus gastos, sin ganar ni perder. Todo lo que vendas por sobre esto es ganancia real.", good: totalVentas >= Number(puntoEquilibrio) },
-            { label: "Ticket Promedio", value: formatCLP(sales.length ? totalVentas / sales.length : 0), desc: "El valor promedio de lo que gasta un cliente por boleta. Te sirve para saber si conviene enfocarte en vender más caro o a más gente.", good: true },
-            { label: "Productos sin stock", value: products.filter(p => p.stock === 0).length, desc: "Productos que figuran en tu catálogo pero que no puedes vender ahora mismo porque se te acabaron — plata que estás dejando de ganar.", good: products.filter(p => p.stock === 0).length === 0 },
-            { label: "Rentabilidad ventas", value: totalGastos > 0 ? (utilidadNeta / totalGastos * 100).toFixed(1) + "%" : "—", desc: "Por cada peso que gastas en tu negocio (mercadería, arriendo, etc.), cuánto terminas ganando de vuelta.", good: utilidadNeta > 0 },
+            { label: "Margen Bruto", value: margenBruto + "%", desc: "Porcentaje de cada venta que queda como ganancia antes de descontar gastos operacionales (arriendo, luz, sueldos). Un valor sobre 25% se considera saludable.", good: Number(margenBruto) > 25 },
+            { label: "Margen Neto", value: margenNeto + "%", desc: "Porcentaje de cada venta que queda como ganancia final, después de descontar todos los gastos del negocio.", good: Number(margenNeto) > 10 },
+            { label: "Punto de Equilibrio", value: formatCLP(Number(puntoEquilibrio)), desc: "Monto de ventas necesario para cubrir los gastos del período, sin generar ganancia ni pérdida.", good: totalVentas >= Number(puntoEquilibrio) },
+            { label: "Ticket Promedio", value: formatCLP(sales.length ? totalVentas / sales.length : 0), desc: "Monto promedio gastado por cliente en cada boleta.", good: true },
+            { label: "Productos sin stock", value: products.filter(p => p.stock === 0).length, desc: "Cantidad de productos del catálogo que actualmente no tienen unidades disponibles para la venta.", good: products.filter(p => p.stock === 0).length === 0 },
+            { label: "Rentabilidad ventas", value: totalGastos > 0 ? (utilidadNeta / totalGastos * 100).toFixed(1) + "%" : "—", desc: "Ganancia generada por cada peso invertido en el negocio (mercadería, arriendo y otros gastos).", good: utilidadNeta > 0 },
           ].map(r => (
             <Card key={r.label} style={{ padding: 20 }}>
               <div className="flex items-center justify-between mb-3">
