@@ -1980,6 +1980,7 @@ function PedidoFormModal({ initial, products, onClose, onSave }) {
         <Field label="Cantidad"><input type="number" min="1" style={inputStyle} value={form.cantidad} onChange={e=>cambiarCantidad(e.target.value)} /></Field>
         <Field label="Fecha de entrega"><input type="date" style={inputStyle} value={form.fechaEntrega} onChange={e=>setForm({...form,fechaEntrega:e.target.value})} /></Field>
         <Field label="Precio total"><input type="number" min="0" style={inputStyle} value={form.precio} onChange={e=>setForm({...form,precio:e.target.value})} placeholder="0" /></Field>
+        {form.tipo==="nuevo" && <Field label="Costo estimado (opcional)"><input type="number" min="0" style={inputStyle} value={form.costo||""} onChange={e=>setForm({...form,costo:e.target.value})} placeholder="Ej: ingredientes, materiales" /></Field>}
         <Field label="Seña / anticipo (opcional)"><input type="number" min="0" style={inputStyle} value={form.seña} onChange={e=>setForm({...form,seña:e.target.value})} placeholder="0" /></Field>
         <div className="col-span-2"><Field label="Estado">
           <select style={inputStyle} value={form.estado} onChange={e=>setForm({...form,estado:e.target.value})}>
@@ -1992,11 +1993,25 @@ function PedidoFormModal({ initial, products, onClose, onSave }) {
         <button onClick={()=>setForm({...form,tipo:""})} className="text-xs font-semibold" style={{color:C.textMuted}}>← Cambiar tipo</button>
         <div className="flex gap-2">
           <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
-          <Btn icon={Check} disabled={!form.detalle.trim()||!form.cliente.trim()} onClick={()=>onSave({...form, cantidad:Number(form.cantidad)||1, precio:Number(form.precio)||0, seña:Number(form.seña)||0})}>Guardar pedido</Btn>
+          <Btn icon={Check} disabled={!form.detalle.trim()||!form.cliente.trim()} onClick={()=>onSave({...form, cantidad:Number(form.cantidad)||1, precio:Number(form.precio)||0, seña:Number(form.seña)||0, costo: form.costo!==undefined && form.costo!=="" ? Number(form.costo) : undefined})}>Guardar pedido</Btn>
         </div>
       </div>
     </Modal>
   );
+}
+
+function calcularGananciaPedido(p, products) {
+  if (p.tipo === "existente" && p.productoId) {
+    const prod = products.find(x=>x.id===p.productoId);
+    if (!prod) return null;
+    const costoTotal = (prod.purchasePrice||0) * (p.cantidad||1);
+    return p.precio - costoTotal;
+  }
+  if (p.tipo === "nuevo") {
+    if (p.costo===undefined || p.costo===null) return null;
+    return p.precio - p.costo;
+  }
+  return null;
 }
 
 function PedidosView({ pedidos, setPedidos, products, showToast }) {
@@ -2013,6 +2028,9 @@ function PedidosView({ pedidos, setPedidos, products, showToast }) {
   const ordenados = [...filtrados].sort((a,b) => vista==="activos" ? (a.fechaEntrega||"").localeCompare(b.fechaEntrega||"") : (b.fechaEntrega||"").localeCompare(a.fechaEntrega||""));
   const pendientesCount = pedidos.filter(p=>p.estado==="pendiente").length;
   const hoyCount = pedidos.filter(p=>p.fechaEntrega===todayISO() && p.estado!=="entregado").length;
+  const gananciasConocidas = entregados.map(p=>calcularGananciaPedido(p,products)).filter(g=>g!==null);
+  const gananciaTotal = gananciasConocidas.reduce((s,g)=>s+g,0);
+  const sinDatoCosto = entregados.length - gananciasConocidas.length;
 
   return (
     <div>
@@ -2020,7 +2038,7 @@ function PedidosView({ pedidos, setPedidos, products, showToast }) {
         <Btn icon={Plus} onClick={()=>{setEditing(null);setShowForm(true);}}>Nuevo pedido</Btn>
       }/>
 
-      <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-5">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
         <Card style={{padding:18}}>
           <div className="text-xs font-semibold mb-1" style={{color:C.textMuted}}>Para entregar hoy</div>
           <div className="text-2xl font-bold" style={{fontFamily:FONT_MONO,color:C.orange}}>{hoyCount}</div>
@@ -2032,6 +2050,11 @@ function PedidosView({ pedidos, setPedidos, products, showToast }) {
         <Card style={{padding:18}}>
           <div className="text-xs font-semibold mb-1" style={{color:C.textMuted}}>Total pedidos</div>
           <div className="text-2xl font-bold" style={{fontFamily:FONT_MONO,color:C.text}}>{pedidos.length}</div>
+        </Card>
+        <Card style={{padding:18}}>
+          <div className="text-xs font-semibold mb-1" style={{color:C.textMuted}}>Ganancia estimada</div>
+          <div className="text-2xl font-bold" style={{fontFamily:FONT_MONO,color:gananciaTotal>=0?C.success:C.danger}}>{formatCLP(gananciaTotal)}</div>
+          {sinDatoCosto>0 && <div className="text-[10px] mt-0.5" style={{color:C.textMuted}}>{sinDatoCosto} entregado{sinDatoCosto>1?"s":""} sin costo registrado</div>}
         </Card>
       </div>
 
@@ -2075,6 +2098,9 @@ function PedidosView({ pedidos, setPedidos, products, showToast }) {
                   <div className="text-right shrink-0">
                     <div className="font-bold" style={{fontFamily:FONT_MONO,color:C.text}}>{formatCLP(p.precio)}</div>
                     {p.seña>0 && <div className="text-xs" style={{color:C.textMuted}}>Seña: {formatCLP(p.seña)}</div>}
+                    {(()=>{ const g = calcularGananciaPedido(p, products); return g!==null ? (
+                      <div className="text-xs font-semibold mt-0.5" style={{color:g>=0?C.success:C.danger}}>{g>=0?"+":""}{formatCLP(g)} ganancia</div>
+                    ) : null; })()}
                   </div>
                 </div>
                 <div className="flex items-center gap-2 mt-3 pt-3" style={{borderTop:`1px solid ${C.border}`}}>
