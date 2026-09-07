@@ -3209,6 +3209,15 @@ function ContabilidadView({ sales, products, gastos, setGastos, proveedores, set
     return Object.values(meses).sort((a, b) => a.mes.localeCompare(b.mes));
   }, [sales, gastos]);
 
+  const flujoData = useMemo(() => {
+    let saldo = 0;
+    return chartData.map(d => {
+      const flujoNeto = d.ventas - d.gastos;
+      saldo += flujoNeto;
+      return { ...d, flujoNeto, saldo };
+    });
+  }, [chartData]);
+
   // Gráfico torta gastos por categoría
   const pieData = useMemo(() => {
     const cats = {};
@@ -3362,6 +3371,7 @@ function ContabilidadView({ sales, products, gastos, setGastos, proveedores, set
     { id: "finanzas", label: "Balance y Resultados", icon: BookOpen },
     { id: "ratios", label: "Ratios", icon: Target },
     { id: "proyecciones", label: "Proyecciones", icon: TrendingUp },
+    { id: "flujo", label: "Flujo de Caja", icon: ArrowLeftRight },
   ];
 
   return (
@@ -3713,6 +3723,54 @@ function ContabilidadView({ sales, products, gastos, setGastos, proveedores, set
                 <p className="text-xs mt-1" style={{ color: "#9B1C1C" }}>Basado en el promedio de los últimos meses, el próximo mes podrías cerrar en negativo. Revisa tus Gastos y considera ajustar precios o reducir costos.</p>
               </div>
             </div>
+          )}
+        </div>
+      )}
+
+      {/* FLUJO DE CAJA */}
+      {tab === "flujo" && (
+        <div className="flex flex-col gap-5">
+          <p className="text-xs" style={{color:C.textMuted}}>Muestra cómo entra y sale el dinero de tu negocio mes a mes, y cuánto vas acumulando en total.</p>
+
+          {flujoData.length===0 ? (
+            <EmptyState icon={ArrowLeftRight} title="Sin datos suficientes" subtitle="Registra ventas y gastos para ver tu flujo de caja" />
+          ) : (
+            <>
+              <Card style={{padding:20}}>
+                <div className="text-xs font-semibold mb-1" style={{color:C.textMuted}}>Saldo acumulado actual</div>
+                <div className="text-2xl font-bold" style={{fontFamily:FONT_MONO,color:flujoData[flujoData.length-1].saldo>=0?C.success:C.danger}}>{formatCLP(flujoData[flujoData.length-1].saldo)}</div>
+              </Card>
+
+              <Card style={{padding:20}}>
+                <h3 className="text-sm font-bold mb-4" style={{ fontFamily: FONT_DISPLAY, color: C.text }}>Flujo neto por mes</h3>
+                <ResponsiveContainer width="100%" height={220}>
+                  <BarChart data={flujoData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke={C.border} vertical={false} />
+                    <XAxis dataKey="mes" tick={{ fontSize: 11, fill: C.textMuted }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fontSize: 10, fill: C.textMuted }} axisLine={false} tickLine={false} tickFormatter={v => "$" + v / 1000 + "k"} />
+                    <Tooltip formatter={v => formatCLP(v)} contentStyle={{ borderRadius: 10, fontSize: 12 }} />
+                    <Bar dataKey="flujoNeto" radius={[6,6,0,0]}>
+                      {flujoData.map((d,i)=><Cell key={i} fill={d.flujoNeto>=0?C.success:C.danger}/>)}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </Card>
+
+              <Card style={{overflow:"hidden"}}>
+                <table className="w-full text-sm">
+                  <thead><tr style={{background:C.cream}}>{["Mes","Ingresos","Egresos","Flujo neto","Saldo acumulado"].map(h=><th key={h} className="text-left px-4 py-3 font-semibold text-xs" style={{color:C.textMuted}}>{h}</th>)}</tr></thead>
+                  <tbody>{flujoData.map(d=>(
+                    <tr key={d.mes} style={{borderTop:`1px solid ${C.border}`}}>
+                      <td className="px-4 py-3 font-medium">{d.mes}</td>
+                      <td className="px-4 py-3" style={{fontFamily:FONT_MONO,color:C.success}}>{formatCLP(d.ventas)}</td>
+                      <td className="px-4 py-3" style={{fontFamily:FONT_MONO,color:C.danger}}>-{formatCLP(d.gastos)}</td>
+                      <td className="px-4 py-3 font-semibold" style={{fontFamily:FONT_MONO,color:d.flujoNeto>=0?C.success:C.danger}}>{d.flujoNeto>=0?"+":""}{formatCLP(d.flujoNeto)}</td>
+                      <td className="px-4 py-3 font-bold" style={{fontFamily:FONT_MONO,color:d.saldo>=0?C.text:C.danger}}>{formatCLP(d.saldo)}</td>
+                    </tr>
+                  ))}</tbody>
+                </table>
+              </Card>
+            </>
           )}
         </div>
       )}
