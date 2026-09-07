@@ -1896,15 +1896,61 @@ function diaLabel(fechaISO) {
   return formatDate(fechaISO);
 }
 
-function PedidoFormModal({ initial, onClose, onSave }) {
-  const [form, setForm] = useState(initial || { cliente: "", telefono: "", detalle: "", cantidad: 1, precio: "", seña: "", fechaEntrega: todayISO(), estado: "pendiente", notas: "" });
+function PedidoFormModal({ initial, products, onClose, onSave }) {
+  const [form, setForm] = useState(initial || { tipo: "", productoId: "", cliente: "", telefono: "", detalle: "", cantidad: 1, precio: "", seña: "", fechaEntrega: todayISO(), estado: "pendiente", notas: "" });
+
+  function elegirProducto(id) {
+    const p = products.find(x=>x.id===id);
+    if (!p) { setForm({...form, productoId:id, detalle:"", precio:""}); return; }
+    setForm({...form, productoId:id, detalle:p.name, precio: p.salePrice * (Number(form.cantidad)||1)});
+  }
+  function cambiarCantidad(val) {
+    const cant = Number(val)||1;
+    if (form.tipo==="existente" && form.productoId) {
+      const p = products.find(x=>x.id===form.productoId);
+      setForm({...form, cantidad: val, precio: p ? p.salePrice*cant : form.precio});
+    } else {
+      setForm({...form, cantidad: val});
+    }
+  }
+
+  if (!form.tipo) {
+    return (
+      <Modal title="Nuevo pedido" onClose={onClose} width={420}>
+        <p className="text-sm mb-4" style={{color:C.textMuted}}>¿Qué está pidiendo el cliente?</p>
+        <div className="flex flex-col gap-3">
+          <button onClick={()=>setForm({...form,tipo:"existente"})} className="text-left p-4 rounded-xl flex items-center gap-3" style={{border:`1.5px solid ${C.border}`}}>
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{background:C.navyLight}}><Package size={18} color={C.navy}/></div>
+            <div><div className="text-sm font-bold" style={{color:C.text}}>Un producto de mi Inventario</div><div className="text-xs" style={{color:C.textMuted}}>Elige de tu catálogo, con precio ya cargado</div></div>
+          </button>
+          <button onClick={()=>setForm({...form,tipo:"nuevo"})} className="text-left p-4 rounded-xl flex items-center gap-3" style={{border:`1.5px solid ${C.border}`}}>
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{background:C.orangeLight}}><Sparkles size={18} color={C.orange}/></div>
+            <div><div className="text-sm font-bold" style={{color:C.text}}>Algo nuevo, hecho a pedido</div><div className="text-xs" style={{color:C.textMuted}}>Ej: una torta personalizada, algo que no vendes normalmente</div></div>
+          </button>
+        </div>
+        <div className="flex justify-end mt-6"><Btn variant="ghost" onClick={onClose}>Cancelar</Btn></div>
+      </Modal>
+    );
+  }
+
   return (
     <Modal title={initial ? "Editar pedido" : "Nuevo pedido"} onClose={onClose} width={480}>
       <div className="grid grid-cols-2 gap-4">
-        <div className="col-span-2"><Field label="¿Qué pidió el cliente?"><input style={inputStyle} value={form.detalle} onChange={e=>setForm({...form,detalle:e.target.value})} placeholder="Ej: Torta de cumpleaños chocolate" /></Field></div>
+        <div className="col-span-2">
+          {form.tipo==="existente" ? (
+            <Field label="Producto">
+              <select style={inputStyle} value={form.productoId} onChange={e=>elegirProducto(e.target.value)}>
+                <option value="">Selecciona un producto...</option>
+                {products.map(p=><option key={p.id} value={p.id}>{p.name} · {formatCLP(p.salePrice)}</option>)}
+              </select>
+            </Field>
+          ) : (
+            <Field label="¿Qué pidió el cliente?"><input style={inputStyle} value={form.detalle} onChange={e=>setForm({...form,detalle:e.target.value})} placeholder="Ej: Torta de cumpleaños chocolate" /></Field>
+          )}
+        </div>
         <Field label="Nombre del cliente"><input style={inputStyle} value={form.cliente} onChange={e=>setForm({...form,cliente:e.target.value})} placeholder="Ej: María González" /></Field>
         <Field label="Teléfono (opcional)"><input style={inputStyle} value={form.telefono} onChange={e=>setForm({...form,telefono:e.target.value})} placeholder="+56 9..." /></Field>
-        <Field label="Cantidad"><input type="number" min="1" style={inputStyle} value={form.cantidad} onChange={e=>setForm({...form,cantidad:e.target.value})} /></Field>
+        <Field label="Cantidad"><input type="number" min="1" style={inputStyle} value={form.cantidad} onChange={e=>cambiarCantidad(e.target.value)} /></Field>
         <Field label="Fecha de entrega"><input type="date" style={inputStyle} value={form.fechaEntrega} onChange={e=>setForm({...form,fechaEntrega:e.target.value})} /></Field>
         <Field label="Precio total"><input type="number" min="0" style={inputStyle} value={form.precio} onChange={e=>setForm({...form,precio:e.target.value})} placeholder="0" /></Field>
         <Field label="Seña / anticipo (opcional)"><input type="number" min="0" style={inputStyle} value={form.seña} onChange={e=>setForm({...form,seña:e.target.value})} placeholder="0" /></Field>
@@ -1915,15 +1961,18 @@ function PedidoFormModal({ initial, onClose, onSave }) {
         </Field></div>
         <div className="col-span-2"><Field label="Notas (opcional)"><input style={inputStyle} value={form.notas} onChange={e=>setForm({...form,notas:e.target.value})} placeholder="Ej: sin nueces, escribir 'Feliz cumple Ana'" /></Field></div>
       </div>
-      <div className="flex justify-end gap-2 mt-6">
-        <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
-        <Btn icon={Check} disabled={!form.detalle.trim()||!form.cliente.trim()} onClick={()=>onSave({...form, cantidad:Number(form.cantidad)||1, precio:Number(form.precio)||0, seña:Number(form.seña)||0})}>Guardar pedido</Btn>
+      <div className="flex justify-between items-center mt-6">
+        <button onClick={()=>setForm({...form,tipo:""})} className="text-xs font-semibold" style={{color:C.textMuted}}>← Cambiar tipo</button>
+        <div className="flex gap-2">
+          <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
+          <Btn icon={Check} disabled={!form.detalle.trim()||!form.cliente.trim()} onClick={()=>onSave({...form, cantidad:Number(form.cantidad)||1, precio:Number(form.precio)||0, seña:Number(form.seña)||0})}>Guardar pedido</Btn>
+        </div>
       </div>
     </Modal>
   );
 }
 
-function PedidosView({ pedidos, setPedidos, showToast }) {
+function PedidosView({ pedidos, setPedidos, products, showToast }) {
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
   const [delTarget, setDelTarget] = useState(null);
@@ -2004,7 +2053,7 @@ function PedidosView({ pedidos, setPedidos, showToast }) {
       )}
 
       {showForm && (
-        <PedidoFormModal initial={editing} onClose={()=>setShowForm(false)} onSave={data=>{
+        <PedidoFormModal initial={editing} products={products} onClose={()=>setShowForm(false)} onSave={data=>{
           if (editing) setPedidos(pedidos.map(p=>p.id===editing.id?{...p,...data}:p));
           else setPedidos([{id:uid("ped"),...data},...pedidos]);
           showToast(editing?"Pedido actualizado":"Pedido registrado");
@@ -3955,7 +4004,7 @@ export default function App({ session, onLogout, isOwner, onOpenAdmin }) {
       {view === "reporte"    && canAccess("reporte", currentUser.role) && <ReporteView sales={sales} products={products} />}
       {view === "contabilidad" && canAccess("contabilidad", currentUser.role) && <ContabilidadView sales={sales} products={products} gastos={gastos} setGastos={setGastos} proveedores={proveedores} setProveedores={setProveedores} fiados={fiados} showToast={showToast} />}
       {view === "caja"       && canAccess("caja", currentUser.role) && <CajaView sales={sales} cajaState={cajaState} setCajaState={setCajaState} showToast={showToast} currentUser={currentUser} />}
-      {view === "pedidos"    && canAccess("pedidos", currentUser.role) && profile.modules?.includes("pedidos") && <PedidosView pedidos={pedidos} setPedidos={setPedidos} showToast={showToast} />}
+      {view === "pedidos"    && canAccess("pedidos", currentUser.role) && profile.modules?.includes("pedidos") && <PedidosView pedidos={pedidos} setPedidos={setPedidos} products={products} showToast={showToast} />}
       {view === "agenda"     && canAccess("agenda", currentUser.role) && profile.modules?.includes("agenda") && <AgendaView profile={profile} setProfile={setProfile} servicios={servicios} setServicios={setServicios} citas={citas} setCitas={setCitas} users={users} showToast={showToast} />}
       {view === "fiados"     && canAccess("fiados", currentUser.role) && <FiadosView fiados={fiados} setFiados={setFiados} showToast={showToast} />}
       {view === "boletas"    && canAccess("boletas", currentUser.role) && <DetalleBoletaView sales={sales} setSales={setSales} products={products} setProducts={setProducts} showToast={showToast} />}
