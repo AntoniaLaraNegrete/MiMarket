@@ -1939,13 +1939,40 @@ function PedidoFormModal({ initial, products, onClose, onSave }) {
         <div className="col-span-2">
           {form.tipo==="existente" ? (
             <Field label="Producto">
-              <select style={inputStyle} value={form.productoId} onChange={e=>elegirProducto(e.target.value)}>
-                <option value="">Selecciona un producto...</option>
-                {products.map(p=><option key={p.id} value={p.id}>{p.name} · {formatCLP(p.salePrice)}</option>)}
-              </select>
+              <div className="flex items-center gap-3">
+                <select style={inputStyle} value={form.productoId} onChange={e=>elegirProducto(e.target.value)}>
+                  <option value="">Selecciona un producto...</option>
+                  {products.map(p=><option key={p.id} value={p.id}>{p.name} · {formatCLP(p.salePrice)}</option>)}
+                </select>
+                {form.productoId && products.find(p=>p.id===form.productoId)?.imageUrl && (
+                  <img src={products.find(p=>p.id===form.productoId).imageUrl} alt="" className="rounded-xl object-cover shrink-0" style={{width:44,height:44}} onError={e=>e.target.style.display="none"}/>
+                )}
+              </div>
             </Field>
           ) : (
-            <Field label="¿Qué pidió el cliente?"><input style={inputStyle} value={form.detalle} onChange={e=>setForm({...form,detalle:e.target.value})} placeholder="Ej: Torta de cumpleaños chocolate" /></Field>
+            <>
+              <Field label="¿Qué pidió el cliente?"><input style={inputStyle} value={form.detalle} onChange={e=>setForm({...form,detalle:e.target.value})} placeholder="Ej: Torta de cumpleaños chocolate" /></Field>
+              <div className="mt-3">
+                <Field label="Foto de referencia (opcional)">
+                  <div className="flex items-center gap-3">
+                    <label className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-sm cursor-pointer shrink-0"
+                      style={{ background: C.orangeLight, color: C.orangeDark, border: `1.5px solid ${C.orange}30` }}>
+                      <Camera size={16} />
+                      Subir foto
+                      <input type="file" accept="image/*" className="hidden" onChange={e=>{
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        const reader = new FileReader();
+                        reader.onload = ev => setForm(f=>({...f, foto: ev.target.result}));
+                        reader.readAsDataURL(file);
+                      }} />
+                    </label>
+                    {form.foto && <img src={form.foto} alt="preview" className="rounded-xl object-cover shrink-0" style={{width:44,height:44}} onError={e=>e.target.style.display="none"}/>}
+                    {form.foto && <button type="button" onClick={()=>setForm(f=>({...f,foto:""}))} className="text-xs font-semibold" style={{color:C.danger}}>Quitar</button>}
+                  </div>
+                </Field>
+              </div>
+            </>
           )}
         </div>
         <Field label="Nombre del cliente"><input style={inputStyle} value={form.cliente} onChange={e=>setForm({...form,cliente:e.target.value})} placeholder="Ej: María González" /></Field>
@@ -1976,16 +2003,20 @@ function PedidosView({ pedidos, setPedidos, products, showToast }) {
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
   const [delTarget, setDelTarget] = useState(null);
+  const [vista, setVista] = useState("activos"); // "activos" | "historial"
   const [filtroEstado, setFiltroEstado] = useState("todos");
 
-  const filtrados = pedidos.filter(p => filtroEstado === "todos" || p.estado === filtroEstado);
-  const ordenados = [...filtrados].sort((a,b) => (a.fechaEntrega||"").localeCompare(b.fechaEntrega||""));
+  const activos = pedidos.filter(p => p.estado !== "entregado");
+  const entregados = pedidos.filter(p => p.estado === "entregado");
+  const base = vista === "activos" ? activos : entregados;
+  const filtrados = vista === "activos" ? base.filter(p => filtroEstado === "todos" || p.estado === filtroEstado) : base;
+  const ordenados = [...filtrados].sort((a,b) => vista==="activos" ? (a.fechaEntrega||"").localeCompare(b.fechaEntrega||"") : (b.fechaEntrega||"").localeCompare(a.fechaEntrega||""));
   const pendientesCount = pedidos.filter(p=>p.estado==="pendiente").length;
   const hoyCount = pedidos.filter(p=>p.fechaEntrega===todayISO() && p.estado!=="entregado").length;
 
   return (
     <div>
-      <PageHeader title="Pedidos" subtitle={`${pedidos.length} pedidos registrados`} right={
+      <PageHeader title="Pedidos" subtitle={`${activos.length} activos · ${entregados.length} en historial`} right={
         <Btn icon={Plus} onClick={()=>{setEditing(null);setShowForm(true);}}>Nuevo pedido</Btn>
       }/>
 
@@ -2004,31 +2035,42 @@ function PedidosView({ pedidos, setPedidos, products, showToast }) {
         </Card>
       </div>
 
-      <div className="flex gap-2 mb-4 flex-wrap">
-        <button onClick={()=>setFiltroEstado("todos")} className="px-3 py-1.5 rounded-lg text-xs font-semibold" style={{background:filtroEstado==="todos"?C.ink:C.surface,color:filtroEstado==="todos"?"#fff":C.textMuted,border:`1px solid ${C.border}`}}>Todos</button>
-        {PEDIDO_ESTADOS.map(e=>(
-          <button key={e.id} onClick={()=>setFiltroEstado(e.id)} className="px-3 py-1.5 rounded-lg text-xs font-semibold" style={{background:filtroEstado===e.id?C.ink:C.surface,color:filtroEstado===e.id?"#fff":C.textMuted,border:`1px solid ${C.border}`}}>{e.label}</button>
-        ))}
+      <div className="flex gap-2 mb-4">
+        <button onClick={()=>{setVista("activos");setFiltroEstado("todos");}} className="px-4 py-2 rounded-xl text-sm font-bold" style={{background:vista==="activos"?C.ink:C.surface,color:vista==="activos"?"#fff":C.textMuted,border:`1px solid ${C.border}`}}>Activos ({activos.length})</button>
+        <button onClick={()=>setVista("historial")} className="px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-1.5" style={{background:vista==="historial"?C.ink:C.surface,color:vista==="historial"?"#fff":C.textMuted,border:`1px solid ${C.border}`}}><History size={14}/> Historial ({entregados.length})</button>
       </div>
 
+      {vista==="activos" && (
+        <div className="flex gap-2 mb-4 flex-wrap">
+          <button onClick={()=>setFiltroEstado("todos")} className="px-3 py-1.5 rounded-lg text-xs font-semibold" style={{background:filtroEstado==="todos"?C.cream:C.surface,color:C.text,border:`1px solid ${C.border}`}}>Todos</button>
+          {PEDIDO_ESTADOS.filter(e=>e.id!=="entregado").map(e=>(
+            <button key={e.id} onClick={()=>setFiltroEstado(e.id)} className="px-3 py-1.5 rounded-lg text-xs font-semibold" style={{background:filtroEstado===e.id?e.bg:C.surface,color:filtroEstado===e.id?e.fg:C.textMuted,border:`1px solid ${C.border}`}}>{e.label}</button>
+          ))}
+        </div>
+      )}
+
       {ordenados.length===0 ? (
-        <EmptyState icon={Truck} title="Sin pedidos" subtitle="Registra el primer pedido de un cliente" />
+        <EmptyState icon={vista==="activos"?Truck:History} title={vista==="activos"?"Sin pedidos activos":"Aún no hay pedidos entregados"} subtitle={vista==="activos"?"Registra el primer pedido de un cliente":"Cuando marques un pedido como entregado, aparecerá aquí"} />
       ) : (
         <div className="flex flex-col gap-2.5">
           {ordenados.map(p=>{
             const est = estadoPedido(p.estado);
             const atrasado = p.fechaEntrega < todayISO() && p.estado !== "entregado";
+            const foto = p.foto || (p.productoId && products.find(x=>x.id===p.productoId)?.imageUrl) || "";
             return (
               <Card key={p.id} style={{padding:16}}>
                 <div className="flex items-start justify-between gap-3 flex-wrap">
-                  <div className="flex-1 min-w-[200px]">
-                    <div className="flex items-center gap-2 flex-wrap mb-1">
-                      <span className="text-xs font-bold px-2 py-0.5 rounded-md" style={{background: atrasado?C.dangerLight:C.cream, color: atrasado?C.danger:C.textMuted}}>{diaLabel(p.fechaEntrega)}</span>
-                      <span className="text-xs font-bold px-2 py-0.5 rounded-md" style={{background:est.bg,color:est.fg}}>{est.label}</span>
+                  <div className="flex items-start gap-3 flex-1 min-w-[200px]">
+                    {foto && <img src={foto} alt="" className="rounded-xl object-cover shrink-0" style={{width:48,height:48}} onError={e=>e.target.style.display="none"}/>}
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 flex-wrap mb-1">
+                        <span className="text-xs font-bold px-2 py-0.5 rounded-md" style={{background: atrasado?C.dangerLight:C.cream, color: atrasado?C.danger:C.textMuted}}>{diaLabel(p.fechaEntrega)}</span>
+                        <span className="text-xs font-bold px-2 py-0.5 rounded-md" style={{background:est.bg,color:est.fg}}>{est.label}</span>
+                      </div>
+                      <div className="font-semibold text-sm" style={{color:C.text}}>{p.detalle} {p.cantidad>1?`(x${p.cantidad})`:""}</div>
+                      <div className="text-xs mt-0.5" style={{color:C.textMuted}}>{p.cliente}{p.telefono?` · ${p.telefono}`:""}</div>
+                      {p.notas && <div className="text-xs mt-1 italic" style={{color:C.textMuted}}>"{p.notas}"</div>}
                     </div>
-                    <div className="font-semibold text-sm" style={{color:C.text}}>{p.detalle} {p.cantidad>1?`(x${p.cantidad})`:""}</div>
-                    <div className="text-xs mt-0.5" style={{color:C.textMuted}}>{p.cliente}{p.telefono?` · ${p.telefono}`:""}</div>
-                    {p.notas && <div className="text-xs mt-1 italic" style={{color:C.textMuted}}>"{p.notas}"</div>}
                   </div>
                   <div className="text-right shrink-0">
                     <div className="font-bold" style={{fontFamily:FONT_MONO,color:C.text}}>{formatCLP(p.precio)}</div>
@@ -2036,14 +2078,19 @@ function PedidosView({ pedidos, setPedidos, products, showToast }) {
                   </div>
                 </div>
                 <div className="flex items-center gap-2 mt-3 pt-3" style={{borderTop:`1px solid ${C.border}`}}>
-                  {PEDIDO_ESTADOS.filter(e=>e.id!==p.estado).map(e=>(
-                    <button key={e.id} onClick={()=>{setPedidos(pedidos.map(x=>x.id===p.id?{...x,estado:e.id}:x)); showToast(`Pedido marcado como "${e.label}"`);}}
+                  {vista==="activos" ? PEDIDO_ESTADOS.filter(e=>e.id!==p.estado).map(e=>(
+                    <button key={e.id} onClick={()=>{setPedidos(pedidos.map(x=>x.id===p.id?{...x,estado:e.id}:x)); showToast(e.id==="entregado"?`Pedido entregado — pasó al historial`:`Pedido marcado como "${e.label}"`);}}
                       className="text-xs font-semibold px-2.5 py-1 rounded-lg" style={{background:e.bg,color:e.fg}}>
                       Marcar {e.label.toLowerCase()}
                     </button>
-                  ))}
+                  )) : (
+                    <button onClick={()=>{setPedidos(pedidos.map(x=>x.id===p.id?{...x,estado:"listo"}:x)); showToast("Pedido devuelto a activos");}}
+                      className="text-xs font-semibold px-2.5 py-1 rounded-lg" style={{background:C.cream,color:C.textMuted}}>
+                      ← Devolver a activos
+                    </button>
+                  )}
                   <div className="flex-1" />
-                  <button onClick={()=>{setEditing(p);setShowForm(true);}}><Pencil size={14} color={C.textMuted}/></button>
+                  {vista==="activos" && <button onClick={()=>{setEditing(p);setShowForm(true);}}><Pencil size={14} color={C.textMuted}/></button>}
                   <button onClick={()=>setDelTarget(p)}><Trash2 size={14} color={C.danger}/></button>
                 </div>
               </Card>
