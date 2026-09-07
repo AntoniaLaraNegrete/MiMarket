@@ -706,20 +706,33 @@ function NotificationBell({ products, fiados, sales, dark }) {
 /* ============================== NAV ============================== */
 const NAV_ITEMS = [
   { id:"panel",         label:"Panel",          icon:LayoutDashboard, roles:["admin"] },
-  { id:"inventario",    label:"Inventario",     icon:Package,         roles:["admin"] },
+  { id:"inventario",    label:"Inventario",     icon:Package,         roles:["admin","vendedor"], permKey:"inventario_ver" },
   { id:"venta",         label:"Venta",          icon:ShoppingCart,    roles:["admin","vendedor"] },
-  { id:"reporte",       label:"Reporte",        icon:BarChart3,       roles:["admin"] },
-  { id:"contabilidad",  label:"Contabilidad",   icon:BookOpen,        roles:["admin"] },
-  { id:"caja",          label:"Caja 360°",      icon:Wallet,          roles:["admin","vendedor"] },
-  { id:"pedidos",       label:"Pedidos",        icon:Truck,           roles:["admin","vendedor"], module:"pedidos" },
-  { id:"agenda",        label:"Agenda",         icon:Clock,           roles:["admin","vendedor"], module:"agenda" },
-  { id:"fiados",        label:"Fiados",         icon:Coins,           roles:["admin","vendedor"] },
-  { id:"boletas",       label:"Boletas",        icon:Receipt,         roles:["admin","vendedor"] },
+  { id:"reporte",       label:"Reporte",        icon:BarChart3,       roles:["admin","vendedor"], permKey:"reporte" },
+  { id:"contabilidad",  label:"Contabilidad",   icon:BookOpen,        roles:["admin","vendedor"], permKey:"contabilidad" },
+  { id:"caja",          label:"Caja 360°",      icon:Wallet,          roles:["admin","vendedor"], permKey:"caja" },
+  { id:"pedidos",       label:"Pedidos",        icon:Truck,           roles:["admin","vendedor"], module:"pedidos", permKey:"pedidos" },
+  { id:"agenda",        label:"Agenda",         icon:Clock,           roles:["admin","vendedor"], module:"agenda", permKey:"agenda" },
+  { id:"fiados",        label:"Fiados",         icon:Coins,           roles:["admin","vendedor"], permKey:"fiados" },
+  { id:"boletas",       label:"Boletas",        icon:Receipt,         roles:["admin","vendedor"], permKey:"boletas" },
   { id:"configurar",    label:"Configurar",     icon:Settings,        roles:["admin"] },
   { id:"tutoriales",    label:"Tutoriales",     icon:PlayCircle,      roles:["admin","vendedor"] },
   { id:"ecommerce",     label:"Ecommerce",      icon:Globe,           roles:["admin"] },
   { id:"contacto",      label:"Contáctanos",    icon:MessageCircle,   roles:["admin","vendedor"] },
 ];
+
+const VENDOR_PERMS = [
+  { id:"inventario_ver", label:"Ver Inventario", hint:"Puede ver productos, precios y stock" },
+  { id:"inventario_editar", label:"Editar Inventario", hint:"Agregar, editar y borrar productos (si no, solo puede ver)" },
+  { id:"caja", label:"Caja 360°", hint:"Abrir y cerrar caja, ver turnos" },
+  { id:"pedidos", label:"Pedidos", hint:"Ver y registrar pedidos de clientes" },
+  { id:"agenda", label:"Agenda", hint:"Ver y agendar citas de servicios" },
+  { id:"fiados", label:"Fiados", hint:"Ver y registrar fiados de clientes" },
+  { id:"boletas", label:"Boletas", hint:"Ver historial de boletas emitidas" },
+  { id:"reporte", label:"Reportes", hint:"Ver gráficos y estadísticas de ventas" },
+  { id:"contabilidad", label:"Contabilidad", hint:"Ver ingresos, gastos y balance del negocio" },
+];
+const DEFAULT_VENDOR_PERMS = { inventario_ver:true, inventario_editar:false, caja:true, pedidos:true, agenda:true, fiados:true, boletas:true, reporte:false, contabilidad:false };
 
 function useIsTablet() {
   const [isTablet, setIsTablet] = useState(false);
@@ -734,7 +747,8 @@ function useIsTablet() {
 
 /* ── Sidebar profesional (PC y tablet landscape) ── */
 function Sidebar({ view, setView, currentUser, onLogout, onSwitchUser, profile, cajaState, products, fiados, sales, isOwner, onOpenAdmin }) {
-  const visible = NAV_ITEMS.filter(i => i.roles.includes(currentUser.role) && (!i.module || profile?.modules?.includes(i.module)));
+  const vendorPerms = { ...DEFAULT_VENDOR_PERMS, ...(profile?.vendorPerms || {}) };
+  const visible = NAV_ITEMS.filter(i => i.roles.includes(currentUser.role) && (!i.module || profile?.modules?.includes(i.module)) && (currentUser.role === "admin" || !i.permKey || vendorPerms[i.permKey]));
   const initials = currentUser.name.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase();
 
   return (
@@ -839,7 +853,8 @@ function Sidebar({ view, setView, currentUser, onLogout, onSwitchUser, profile, 
 /* ── Topbar (solo en móvil/tablet portrait) ── */
 function MobileTopbar({ view, setView, currentUser, onLogout, onSwitchUser, profile, cajaState, products, fiados, sales, isOwner, onOpenAdmin }) {
   const [menuOpen, setMenuOpen] = useState(false);
-  const visible = NAV_ITEMS.filter(i => i.roles.includes(currentUser.role) && (!i.module || profile?.modules?.includes(i.module)));
+  const vendorPerms = { ...DEFAULT_VENDOR_PERMS, ...(profile?.vendorPerms || {}) };
+  const visible = NAV_ITEMS.filter(i => i.roles.includes(currentUser.role) && (!i.module || profile?.modules?.includes(i.module)) && (currentUser.role === "admin" || !i.permKey || vendorPerms[i.permKey]));
   const initials = currentUser.name.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase();
 
   return (
@@ -1219,7 +1234,7 @@ function ProductFormModal({ initial, categories, onClose, onSave }) {
   );
 }
 
-function InventarioView({ products, setProducts, showToast, profile, gastos, setGastos }) {
+function InventarioView({ products, setProducts, showToast, profile, gastos, setGastos, readOnly=false }) {
   const categories = activeCategories(profile);
   const [search, setSearch] = useState("");
   const [cat,    setCat]    = useState("Todas");
@@ -1242,11 +1257,11 @@ function InventarioView({ products, setProducts, showToast, profile, gastos, set
 
   return (
     <div>
-      <PageHeader title="Inventario" subtitle={`${products.length} productos en tu catálogo`} right={
+      <PageHeader title="Inventario" subtitle={`${products.length} productos en tu catálogo${readOnly?" · Solo lectura":""}`} right={
         <div className="flex gap-2 flex-wrap">
           <Btn variant="outline" icon={Download} onClick={handleExport}>Descargar</Btn>
-          <Btn variant="outline" icon={Truck} onClick={()=>setShowRestock(true)}>Reponer stock</Btn>
-          <Btn icon={Plus} onClick={()=>{ setEditing(null); setShowForm(true); }}>Ingresar producto</Btn>
+          {!readOnly && <Btn variant="outline" icon={Truck} onClick={()=>setShowRestock(true)}>Reponer stock</Btn>}
+          {!readOnly && <Btn icon={Plus} onClick={()=>{ setEditing(null); setShowForm(true); }}>Ingresar producto</Btn>}
         </div>}/>
 
       <div className="flex gap-2 mb-5">
@@ -1309,9 +1324,10 @@ function InventarioView({ products, setProducts, showToast, profile, gastos, set
                       <td className="px-4 py-3"><StockBadge stock={p.stock}/></td>
                       <td className="px-4 py-3"><span className="px-2 py-1 rounded-md text-xs font-bold" style={{background:cs.bg,color:cs.fg}}>{p.category}</span></td>
                       <td className="px-4 py-3"><div className="flex gap-1">
-                        <button onClick={()=>{setEditing(p);setShowForm(true);}} className="p-1.5 rounded-lg hover:bg-black/5"><Pencil size={15} color={C.textMuted}/></button>
+                        {!readOnly && <button onClick={()=>{setEditing(p);setShowForm(true);}} className="p-1.5 rounded-lg hover:bg-black/5"><Pencil size={15} color={C.textMuted}/></button>}
                         {p.priceHistory?.length>0 && <button onClick={()=>setPriceHistTarget(p)} className="p-1.5 rounded-lg hover:bg-black/5" title="Historial de precios"><History size={15} color={C.navy}/></button>}
-                        <button onClick={()=>setDelTarget(p)} className="p-1.5 rounded-lg hover:bg-black/5"><Trash2 size={15} color={C.danger}/></button>
+                        {!readOnly && <button onClick={()=>setDelTarget(p)} className="p-1.5 rounded-lg hover:bg-black/5"><Trash2 size={15} color={C.danger}/></button>}
+                        {readOnly && !p.priceHistory?.length && <span className="text-xs" style={{color:C.textMuted}}>—</span>}
                       </div></td>
                     </tr>
                   );
@@ -2585,6 +2601,7 @@ function CajaView({ sales, cajaState, setCajaState, showToast, currentUser }) {
         {cajaState.isOpen?<Btn variant="dark" onClick={()=>setCloseModal(true)}>Cerrar caja</Btn>:<Btn onClick={()=>setOpenModal(true)}>Abrir caja</Btn>}
       </Card>
 
+
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5">
         <Card style={{padding:18}}><div className="text-xs" style={{color:C.textMuted}}>Efectivo esperado</div><div className="text-2xl font-bold mt-1" style={{fontFamily:FONT_MONO,color:C.text}}>{formatCLP(expected)}</div><div className="text-xs mt-1" style={{color:C.textMuted}}>Apertura {formatCLP(cajaState.openingAmount)} + Ventas {formatCLP(cashSales)}</div></Card>
         <Card style={{padding:18}}><div className="text-xs" style={{color:C.textMuted}}>Total vendido hoy</div><div className="text-2xl font-bold mt-1" style={{fontFamily:FONT_MONO,color:C.text}}>{formatCLP(salesToday.reduce((s,x)=>s+x.total,0))}</div><div className="text-xs mt-1" style={{color:C.textMuted}}>{salesToday.length} boletas emitidas</div></Card>
@@ -2663,7 +2680,7 @@ function ConfigurarView({ profile, setProfile, showToast, users, currentUser, on
     setCatToDelete(null);
     showToast("Categoría eliminada");
   }
-  const tabs=[{id:"perfil",label:"Perfil del negocio",icon:Store},{id:"sucursales",label:"Sucursales",icon:Building2},{id:"usuarios",label:"Usuarios",icon:Users},{id:"impresion",label:"Impresión",icon:Printer},{id:"logo",label:"Logo",icon:ImageIcon,premium:true},{id:"categorias",label:"Categorías",icon:Shapes}];
+  const tabs=[{id:"perfil",label:"Perfil del negocio",icon:Store},{id:"sucursales",label:"Sucursales",icon:Building2},{id:"usuarios",label:"Usuarios",icon:Users},{id:"permisos",label:"Permisos",icon:Lock},{id:"impresion",label:"Impresión",icon:Printer},{id:"logo",label:"Logo",icon:ImageIcon,premium:true},{id:"categorias",label:"Categorías",icon:Shapes}];
 
   return (
     <div>
@@ -2747,6 +2764,32 @@ function ConfigurarView({ profile, setProfile, showToast, users, currentUser, on
                   <div className="col-span-2"><Field label="Rol"><select style={inputStyle} value={newUser.role} onChange={e=>setNewUser({...newUser,role:e.target.value})}><option value="vendedor">Vendedor (acceso limitado)</option><option value="admin">Administrador (acceso completo)</option></select></Field></div>
                 </div>
                 <Btn size="sm" icon={Plus} disabled={!newUser.name.trim()||newUser.pin.length!==4} onClick={()=>{onAddUser(newUser);setNewUser({name:"",pin:"",role:"vendedor"});}}>Crear usuario</Btn>
+              </div>
+            </>
+          )}
+          {tab==="permisos"&&(
+            <>
+              <h3 className="font-bold mb-1" style={{fontFamily:FONT_DISPLAY,color:C.text}}>Permisos de vendedores</h3>
+              <p className="text-xs mb-5" style={{color:C.textMuted}}>Decide qué puede ver y hacer un vendedor cuando entra con su PIN. Puedes cambiarlo cuando quieras.</p>
+              <div className="flex flex-col gap-1">
+                {VENDOR_PERMS.map(p=>{
+                  const perms = {...DEFAULT_VENDOR_PERMS, ...(profile.vendorPerms||{})};
+                  const on = perms[p.id];
+                  return (
+                    <div key={p.id} className="flex items-center justify-between px-4 py-3 rounded-xl" style={{background:C.cream}}>
+                      <div>
+                        <div className="text-sm font-semibold" style={{color:C.text}}>{p.label}</div>
+                        <div className="text-xs" style={{color:C.textMuted}}>{p.hint}</div>
+                      </div>
+                      <button onClick={()=>{
+                        const updated = {...perms, [p.id]: !on};
+                        setProfile({...profile, vendorPerms: updated});
+                      }} className="shrink-0 w-11 h-6 rounded-full relative transition-colors" style={{background:on?C.success:"#D1D5DB"}}>
+                        <span className="absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all" style={{left:on?"22px":"2px"}}/>
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
             </>
           )}
@@ -3767,8 +3810,18 @@ export default function App({ session, onLogout, isOwner, onOpenAdmin }) {
   const [citas, setCitas] = useState([]);
   const [counters,    setCounters]    = useState({ voucher: 1000, boleta: 8800 });
   const [cajaState,   setCajaState]   = useState({ isOpen: false, openedAt: new Date().toISOString(), openingAmount: 0, turnos: [] });
-  const [profile,     setProfile]     = useState({ name: "Mi Minimarket", rut: "", address: "", comuna: "", region: "", size: "50 a 100 metros cuadrados", type: "minimarket", modules: ["inventario"], categories: [], meta: null, onboardingCompleted: false, logoUrl: "", serviceCategories: [] });
+  const [profile,     setProfile]     = useState({ name: "Mi Minimarket", rut: "", address: "", comuna: "", region: "", size: "50 a 100 metros cuadrados", type: "minimarket", modules: ["inventario"], categories: [], meta: null, onboardingCompleted: false, logoUrl: "", serviceCategories: [], vendorPerms: DEFAULT_VENDOR_PERMS });
   const [profileLoaded, setProfileLoaded] = useState(false);
+  const vendorPermsActive = { ...DEFAULT_VENDOR_PERMS, ...(profile.vendorPerms || {}) };
+  function canAccess(key, role) {
+    if (role === "admin") return true;
+    if (!key) return true;
+    return !!vendorPermsActive[key];
+  }
+  function firstAllowedView(role) {
+    const item = NAV_ITEMS.find(n => n.roles.includes(role) && canAccess(n.permKey, role) && (!n.module || profile?.modules?.includes(n.module)));
+    return item?.id || "venta";
+  }
   const [switchingUser, setSwitchingUser] = useState(false);
 
   // Cargar el perfil del negocio guardado en Supabase al entrar
@@ -3784,7 +3837,7 @@ export default function App({ session, onLogout, isOwner, onOpenAdmin }) {
         setProfile({
           name: data.name || "Mi Minimarket", rut: data.rut || "", address: data.address || "",
           comuna: data.comuna || "", region: data.region || "", size: data.size || "50 a 100 metros cuadrados",
-          type: data.type || "minimarket", modules: data.modules || ["inventario"], categories: data.categories || [], meta: data.meta || null, onboardingCompleted: data.onboarding_completed || false, logoUrl: data.logo_url || "", serviceCategories: data.service_categories || [],
+          type: data.type || "minimarket", modules: data.modules || ["inventario"], categories: data.categories || [], meta: data.meta || null, onboardingCompleted: data.onboarding_completed || false, logoUrl: data.logo_url || "", serviceCategories: data.service_categories || [], vendorPerms: data.vendor_perms || DEFAULT_VENDOR_PERMS,
         });
         if (data.products)    setProducts(data.products);
         if (data.sales)       setSales(data.sales);
@@ -3810,7 +3863,7 @@ export default function App({ session, onLogout, isOwner, onOpenAdmin }) {
         user_id: session.user.id,
         email: session.user.email,
         name: profile.name, rut: profile.rut, address: profile.address, comuna: profile.comuna,
-        region: profile.region, size: profile.size, type: profile.type, modules: profile.modules, categories: profile.categories || [], meta: profile.meta || null, onboarding_completed: profile.onboardingCompleted || false, logo_url: profile.logoUrl || "", service_categories: profile.serviceCategories || [],
+        region: profile.region, size: profile.size, type: profile.type, modules: profile.modules, categories: profile.categories || [], meta: profile.meta || null, onboarding_completed: profile.onboardingCompleted || false, logo_url: profile.logoUrl || "", service_categories: profile.serviceCategories || [], vendor_perms: profile.vendorPerms || DEFAULT_VENDOR_PERMS,
         products, sales, fiados, gastos, proveedores, counters, caja_state: cajaState, users, pedidos, servicios, citas,
         updated_at: new Date().toISOString(),
       }, { onConflict: "user_id" }).then(({ error }) => {
@@ -3853,25 +3906,40 @@ export default function App({ session, onLogout, isOwner, onOpenAdmin }) {
     @keyframes scan { 0%,100%{top:10%} 50%{top:80%} }
   `;
 
-  // Entra directo con tu cuenta (correo/contraseña) — ya no pide PIN aparte
-  // Espera a que el perfil termine de cargar antes de decidir si mostrar el asistente inicial,
-  // así solo aparece la primera vez de verdad, no cada vez que recargas la página.
+  // Primera vez en este dispositivo: crea tu usuario de dueña y entra directo.
+  // Si ya existen vendedores además de ti, en vez de entrar directo como dueña,
+  // se muestra el selector "¿Quién eres?" para que cualquiera elija su PIN,
+  // sin que tú tengas que abrir la sesión cada vez.
   useEffect(() => {
     if (!currentUser && session?.user && profileLoaded) {
       const existingAdmin = users.find(u => u.id === session.user.id);
-      if (existingAdmin) {
-        setCurrentUser(existingAdmin);
-      } else {
+      if (!existingAdmin) {
         const nombre = session.user.email ? session.user.email.split("@")[0] : "Admin";
         const u = { id: session.user.id, name: nombre.charAt(0).toUpperCase() + nombre.slice(1), role: "admin", pin: "" };
         setUsers([u, ...users]);
         setCurrentUser(u);
+        if (!profile.onboardingCompleted) setOnboarding(true);
+      } else if (users.length <= 1) {
+        setCurrentUser(existingAdmin);
+        if (!profile.onboardingCompleted) setOnboarding(true);
       }
-      if (!profile.onboardingCompleted) setOnboarding(true);
+      // si hay más de 1 usuario (dueña + vendedores), no entra sola — se queda
+      // esperando a que alguien se identifique en el selector de abajo.
     }
   }, [session, currentUser, profileLoaded, profile.onboardingCompleted]);
 
   if (!currentUser) {
+    if (session?.user && profileLoaded && users.length > 1) {
+      return (
+        <div style={{ fontFamily: FONT_BODY }}>
+          <style>{STYLES}</style>
+          <LoginScreen users={users} onLogin={u => {
+            setCurrentUser(u);
+            setView(firstAllowedView(u.role));
+          }} />
+        </div>
+      );
+    }
     return (
       <div style={{ fontFamily: FONT_BODY, minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
         <style>{STYLES}</style>
@@ -3882,15 +3950,15 @@ export default function App({ session, onLogout, isOwner, onOpenAdmin }) {
   const content = (
     <div className="p-4 md:p-7" style={{ paddingBottom: isTablet ? 100 : 32 }}>
       {view === "panel"      && currentUser.role === "admin" && <PanelView products={products} sales={sales} fiados={fiados} profile={profile} setProfile={setProfile} setView={setView} currentUser={currentUser} />}
-      {view === "inventario" && currentUser.role === "admin" && <InventarioView products={products} setProducts={setProducts} showToast={showToast} profile={profile} gastos={gastos} setGastos={setGastos} />}
+      {view === "inventario" && canAccess("inventario_ver", currentUser.role) && <InventarioView products={products} setProducts={setProducts} showToast={showToast} profile={profile} gastos={gastos} setGastos={setGastos} readOnly={!canAccess("inventario_editar", currentUser.role)} />}
       {view === "venta"                                       && <VentaView {...viewProps} />}
-      {view === "reporte"    && currentUser.role === "admin" && <ReporteView sales={sales} products={products} />}
-      {view === "contabilidad" && currentUser.role === "admin" && <ContabilidadView sales={sales} products={products} gastos={gastos} setGastos={setGastos} proveedores={proveedores} setProveedores={setProveedores} fiados={fiados} showToast={showToast} />}
-      {view === "caja"       && (currentUser.role === "admin" || currentUser.role === "vendedor") && <CajaView sales={sales} cajaState={cajaState} setCajaState={setCajaState} showToast={showToast} currentUser={currentUser} />}
-      {view === "pedidos"    && (currentUser.role === "admin" || currentUser.role === "vendedor") && profile.modules?.includes("pedidos") && <PedidosView pedidos={pedidos} setPedidos={setPedidos} showToast={showToast} />}
-      {view === "agenda"     && (currentUser.role === "admin" || currentUser.role === "vendedor") && profile.modules?.includes("agenda") && <AgendaView profile={profile} setProfile={setProfile} servicios={servicios} setServicios={setServicios} citas={citas} setCitas={setCitas} users={users} showToast={showToast} />}
-      {view === "fiados"     && (currentUser.role === "admin" || currentUser.role === "vendedor") && <FiadosView fiados={fiados} setFiados={setFiados} showToast={showToast} />}
-      {view === "boletas"                                     && <DetalleBoletaView sales={sales} setSales={setSales} products={products} setProducts={setProducts} showToast={showToast} />}
+      {view === "reporte"    && canAccess("reporte", currentUser.role) && <ReporteView sales={sales} products={products} />}
+      {view === "contabilidad" && canAccess("contabilidad", currentUser.role) && <ContabilidadView sales={sales} products={products} gastos={gastos} setGastos={setGastos} proveedores={proveedores} setProveedores={setProveedores} fiados={fiados} showToast={showToast} />}
+      {view === "caja"       && canAccess("caja", currentUser.role) && <CajaView sales={sales} cajaState={cajaState} setCajaState={setCajaState} showToast={showToast} currentUser={currentUser} />}
+      {view === "pedidos"    && canAccess("pedidos", currentUser.role) && profile.modules?.includes("pedidos") && <PedidosView pedidos={pedidos} setPedidos={setPedidos} showToast={showToast} />}
+      {view === "agenda"     && canAccess("agenda", currentUser.role) && profile.modules?.includes("agenda") && <AgendaView profile={profile} setProfile={setProfile} servicios={servicios} setServicios={setServicios} citas={citas} setCitas={setCitas} users={users} showToast={showToast} />}
+      {view === "fiados"     && canAccess("fiados", currentUser.role) && <FiadosView fiados={fiados} setFiados={setFiados} showToast={showToast} />}
+      {view === "boletas"    && canAccess("boletas", currentUser.role) && <DetalleBoletaView sales={sales} setSales={setSales} products={products} setProducts={setProducts} showToast={showToast} />}
       {view === "configurar" && currentUser.role === "admin" && <ConfigurarView profile={profile} setProfile={setProfile} showToast={showToast} users={users} currentUser={currentUser} onAddUser={addUser} onDeleteUser={deleteUser} onUpdateUser={updateUser} />}
       {view === "tutoriales"                                  && <TutorialesView />}
       {view === "ecommerce"  && currentUser.role === "admin" && <EcommerceView />}
@@ -3930,8 +3998,7 @@ export default function App({ session, onLogout, isOwner, onOpenAdmin }) {
           <LoginScreen users={users} onCancel={()=>setSwitchingUser(false)} onLogin={u=>{
             setCurrentUser(u);
             setSwitchingUser(false);
-            const fv = NAV_ITEMS.find(n => n.roles.includes(u.role));
-            setView(fv?.id || "venta");
+            setView(firstAllowedView(u.role));
             showToast(`Hola, ${u.name.split(" ")[0]} 👋`);
           }} />
         </div>
