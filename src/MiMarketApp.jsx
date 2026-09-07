@@ -3132,19 +3132,21 @@ const GASTO_CATS = ["Arriendo","Luz","Agua","Gas","Internet / Teléfono","Sueldo
 const PIE_COLORS = ["#F97316","#FB923C","#FCD34D","#34D399","#60A5FA","#A78BFA","#F472B6","#4ADE80","#38BDF8","#C084FC"];
 
 const FIN_EXPLAIN = {
-  "Efectivo en caja": "Es el dinero que has recibido en efectivo por tus ventas. Representa la plata que tienes disponible ahora mismo.",
-  "Cuentas por cobrar (Fiados)": "Es el dinero que tus clientes te deben por ventas al fiado que todavía no te han pagado.",
-  "Valor inventario": "Es cuánto vale, al precio que TÚ pagaste, todo el stock de productos que tienes guardado sin vender.",
-  "Ingresos por transferencia / tarjeta": "Ventas que te pagaron por transferencia, débito o crédito, en vez de efectivo.",
-  "Cuentas por pagar (proveedores)": "Es lo que tú le debes a tus proveedores por mercadería que ya recibiste pero aún no has pagado.",
-  "Gastos pendientes": "Gastos del negocio (luz, arriendo, etc.) que ya se generaron pero todavía no pagas.",
-  "Capital invertido": "El dinero total que has puesto o gastado para mantener funcionando tu negocio.",
-  "Utilidad acumulada": "La ganancia total que ha generado tu negocio hasta ahora, después de restar todos los costos.",
-  "Ingresos por ventas": "El total de dinero que han generado todas tus ventas, sin restar ningún costo todavía.",
-  "Costo de mercadería vendida": "Lo que a TI te costó comprar los productos que ya vendiste (no lo que los cobraste al cliente).",
-  "UTILIDAD BRUTA": "Lo que ganas por vender, antes de restar gastos como arriendo, luz o sueldos.",
-  "Gastos operacionales": "Gastos del día a día para mantener el negocio funcionando: arriendo, luz, sueldos, etc.",
-  "UTILIDAD OPERACIONAL / NETA": "Tu ganancia real final, después de restar TODOS los costos y gastos del negocio.",
+  "Efectivo en caja": "Es el dinero que has recibido en efectivo por tus ventas. Representa la plata que tienes disponible ahora mismo, la que podrías retirar o usar hoy sin esperar nada.",
+  "Cuentas por cobrar (Fiados)": "Es el dinero que tus clientes te deben por ventas al fiado que todavía no te han pagado. Aunque ya lo \"vendiste\", ese dinero todavía no está en tu bolsillo.",
+  "Valor inventario": "Es cuánto vale, al precio que TÚ pagaste (no al que vendes), todo el stock de productos que tienes guardado sin vender. Es plata que ya gastaste pero que sigue \"guardada\" en forma de mercadería.",
+  "Ingresos por transferencia / tarjeta": "Ventas que te pagaron por transferencia, débito o crédito, en vez de efectivo. Este dinero suele demorar uno o más días en llegar a tu cuenta bancaria.",
+  "Cuentas por pagar (proveedores)": "Es lo que tú le debes a tus proveedores por mercadería que ya recibiste pero aún no has pagado. Es una deuda tuya, lo contrario a las Cuentas por cobrar.",
+  "Gastos pendientes": "Gastos del negocio (luz, arriendo, etc.) que ya se generaron pero todavía no pagas. Aunque no hayan salido de tu bolsillo aún, ya son un compromiso.",
+  "Capital invertido": "El dinero total que has puesto o gastado para mantener funcionando tu negocio (compras, arriendo, etc.), sumado desde que empezaste a registrar tus gastos aquí.",
+  "Utilidad acumulada": "La ganancia total que ha generado tu negocio hasta ahora, después de restar todos los costos. Es tu \"marcador\" histórico: si es positivo, en general el negocio ha ganado más de lo que ha gastado.",
+  "Ingresos por ventas": "El total de dinero que han generado todas tus ventas, sin restar ningún costo todavía. Es la \"torta completa\", antes de descontar nada.",
+  "Costo de mercadería vendida": "Lo que a TI te costó comprar los productos que ya vendiste (no lo que los cobraste al cliente). La diferencia entre esto y tus ventas es tu ganancia bruta.",
+  "UTILIDAD BRUTA": "Lo que ganas por vender, antes de restar gastos como arriendo, luz o sueldos. Se calcula: Ventas menos el Costo de mercadería vendida.",
+  "Gastos operacionales": "Gastos del día a día para mantener el negocio funcionando: arriendo, luz, sueldos, insumos de aseo, etc. — todo lo que no es comprar mercadería para vender.",
+  "UTILIDAD OPERACIONAL / NETA": "Tu ganancia real final, después de restar TODOS los costos y gastos del negocio. Este es el número que realmente importa: cuánto te queda de verdad.",
+  "Margen bruto": "De cada $100 que vendes, cuántos te quedan después de pagar solo la mercadería (sin contar arriendo, luz, etc). Mientras más alto, mejor compras o vendes.",
+  "Margen neto": "De cada $100 que vendes, cuántos te quedan realmente en el bolsillo después de TODOS los gastos. Es el indicador más honesto de qué tan rentable es tu negocio.",
 };
 
 function InfoRow({ label, value, color, bold=false, border=false, suffix }) {
@@ -3182,10 +3184,6 @@ function ContabilidadView({ sales, products, gastos, setGastos, proveedores, set
   const [gasto, setGasto] = useState({ fecha: todayISO(), categoria: GASTO_CATS[0], descripcion: "", monto: "", proveedor: "", facturaUrl: "", facturaNombre: "" });
   const [customCat, setCustomCat] = useState(false);
   const [prov, setProv] = useState({ nombre: "", rut: "", telefono: "", email: "", condiciones: "30 días" });
-  const [iaMessages, setIaMessages] = useState([{ role: "assistant", content: "¡Hola! Soy tu compañera financiera 🤝 Estoy aquí para ayudarte a entender tus números y tomar mejores decisiones para tu negocio. ¿En qué te puedo ayudar hoy?" }]);
-  const [iaInput, setIaInput] = useState("");
-  const [iaLoading, setIaLoading] = useState(false);
-  const iaEndRef = useRef(null);
 
   // Cálculos base
   const totalVentas = sales.reduce((s, x) => s + x.total, 0);
@@ -3359,41 +3357,6 @@ function ContabilidadView({ sales, products, gastos, setGastos, proveedores, set
     }
   }, []);
 
-  async function sendIA() {
-    if (!iaInput.trim() || iaLoading) return;
-    const userMsg = iaInput.trim();
-    setIaInput("");
-    setIaMessages(prev => [...prev, { role: "user", content: userMsg }]);
-    setIaLoading(true);
-    try {
-      const context = `Datos del negocio:
-- Ventas totales: ${formatCLP(totalVentas)}
-- Gastos totales: ${formatCLP(totalGastos)}
-- Utilidad neta: ${formatCLP(utilidadNeta)}
-- Margen neto: ${margenNeto}%
-- Margen bruto: ${margenBruto}%
-- Productos en inventario: ${products.length}
-- Productos sin stock: ${products.filter(p => p.stock === 0).length}
-- Proyección próximo mes: ventas ${formatCLP(proyeccion.ventas)}, utilidad ${formatCLP(proyeccion.utilidad)}
-- Punto de equilibrio: ${formatCLP(Number(puntoEquilibrio))}`;
-
-      const response = await fetch("/api/mia", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          context,
-          messages: [...iaMessages.slice(-6).filter(m => m.role !== "assistant" || iaMessages.indexOf(m) > 0), { role: "user", content: userMsg }]
-        })
-      });
-      const data = await response.json();
-      const reply = data.content?.[0]?.text || "Lo siento, no pude procesar tu consulta en este momento.";
-      setIaMessages(prev => [...prev, { role: "assistant", content: reply }]);
-    } catch {
-      setIaMessages(prev => [...prev, { role: "assistant", content: "Tuve un problema conectándome. Intenta de nuevo en un momento 🙏" }]);
-    }
-    setIaLoading(false);
-  }
-
   const TABS = [
     { id: "panel", label: "Panel", icon: LayoutDashboard },
     { id: "gastos", label: "Gastos", icon: TrendingDown },
@@ -3401,7 +3364,6 @@ function ContabilidadView({ sales, products, gastos, setGastos, proveedores, set
     { id: "finanzas", label: "Balance y Resultados", icon: BookOpen },
     { id: "ratios", label: "Ratios", icon: Target },
     { id: "proyecciones", label: "Proyecciones", icon: TrendingUp },
-    { id: "ia", label: "IA Compañera", icon: Brain },
   ];
 
   return (
@@ -3692,12 +3654,12 @@ function ContabilidadView({ sales, products, gastos, setGastos, proveedores, set
       {tab === "ratios" && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {[
-            { label: "Margen Bruto", value: margenBruto + "%", desc: "Porcentaje de ganancia antes de gastos operacionales", good: Number(margenBruto) > 25 },
-            { label: "Margen Neto", value: margenNeto + "%", desc: "Porcentaje de ganancia final después de todos los gastos", good: Number(margenNeto) > 10 },
-            { label: "Punto de Equilibrio", value: formatCLP(Number(puntoEquilibrio)), desc: "Cuánto necesitas vender para no perder ni ganar", good: totalVentas >= Number(puntoEquilibrio) },
-            { label: "Ticket Promedio", value: formatCLP(sales.length ? totalVentas / sales.length : 0), desc: "Valor promedio por boleta", good: true },
-            { label: "Productos sin stock", value: products.filter(p => p.stock === 0).length, desc: "Productos que no puedes vender ahora", good: products.filter(p => p.stock === 0).length === 0 },
-            { label: "Rentabilidad ventas", value: totalGastos > 0 ? (utilidadNeta / totalGastos * 100).toFixed(1) + "%" : "—", desc: "Por cada peso gastado, cuánto ganas", good: utilidadNeta > 0 },
+            { label: "Margen Bruto", value: margenBruto + "%", desc: "De cada $100 que vendes, esto te queda después de pagar solo la mercadería (sin arriendo, luz, etc). Sobre 25% suele ser saludable para un minimarket.", good: Number(margenBruto) > 25 },
+            { label: "Margen Neto", value: margenNeto + "%", desc: "De cada $100 que vendes, esto es lo que realmente te queda en el bolsillo después de TODOS los gastos del negocio.", good: Number(margenNeto) > 10 },
+            { label: "Punto de Equilibrio", value: formatCLP(Number(puntoEquilibrio)), desc: "Cuánto necesitas vender este período para cubrir tus gastos, sin ganar ni perder. Todo lo que vendas por sobre esto es ganancia real.", good: totalVentas >= Number(puntoEquilibrio) },
+            { label: "Ticket Promedio", value: formatCLP(sales.length ? totalVentas / sales.length : 0), desc: "El valor promedio de lo que gasta un cliente por boleta. Te sirve para saber si conviene enfocarte en vender más caro o a más gente.", good: true },
+            { label: "Productos sin stock", value: products.filter(p => p.stock === 0).length, desc: "Productos que figuran en tu catálogo pero que no puedes vender ahora mismo porque se te acabaron — plata que estás dejando de ganar.", good: products.filter(p => p.stock === 0).length === 0 },
+            { label: "Rentabilidad ventas", value: totalGastos > 0 ? (utilidadNeta / totalGastos * 100).toFixed(1) + "%" : "—", desc: "Por cada peso que gastas en tu negocio (mercadería, arriendo, etc.), cuánto terminas ganando de vuelta.", good: utilidadNeta > 0 },
           ].map(r => (
             <Card key={r.label} style={{ padding: 20 }}>
               <div className="flex items-center justify-between mb-3">
@@ -3750,71 +3712,10 @@ function ContabilidadView({ sales, products, gastos, setGastos, proveedores, set
               <AlertTriangle size={18} color={C.danger} className="shrink-0 mt-0.5" />
               <div>
                 <p className="text-sm font-semibold" style={{ color: C.danger }}>Alerta: proyección de pérdida</p>
-                <p className="text-xs mt-1" style={{ color: "#9B1C1C" }}>Basado en el promedio de los últimos meses, el próximo mes podrías cerrar en negativo. Consulta a tu IA Compañera para obtener consejos.</p>
+                <p className="text-xs mt-1" style={{ color: "#9B1C1C" }}>Basado en el promedio de los últimos meses, el próximo mes podrías cerrar en negativo. Revisa tus Gastos y considera ajustar precios o reducir costos.</p>
               </div>
             </div>
           )}
-        </div>
-      )}
-
-      {/* IA COMPAÑERA */}
-      {tab === "ia" && (
-        <div className="flex flex-col" style={{ height: "60vh" }}>
-          <Card style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-            <div className="flex items-center gap-3 px-5 py-4 shrink-0" style={{ borderBottom: `1px solid ${C.border}` }}>
-              <div className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: PREMIUM_GRADIENT }}>
-                <Brain size={18} color="#fff" />
-              </div>
-              <div>
-                <div className="font-bold text-sm" style={{ fontFamily: FONT_DISPLAY, color: C.text }}>Mia — Tu compañera financiera</div>
-                <div className="text-xs flex items-center gap-1" style={{ color: C.success }}>
-                  <span className="w-1.5 h-1.5 rounded-full inline-block" style={{ background: C.success }} /> En línea · Lista para ayudarte
-                </div>
-              </div>
-            </div>
-
-            <div className="flex-1 overflow-y-auto p-5 flex flex-col gap-3">
-              {iaMessages.map((m, i) => (
-                <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
-                  <div className="max-w-[80%] px-4 py-3 rounded-2xl text-sm"
-                    style={{
-                      background: m.role === "user" ? C.ink : C.cream,
-                      color: m.role === "user" ? "#fff" : C.text,
-                      borderRadius: m.role === "user" ? "18px 18px 4px 18px" : "18px 18px 18px 4px"
-                    }}>
-                    {m.content}
-                  </div>
-                </div>
-              ))}
-              {iaLoading && (
-                <div className="flex justify-start">
-                  <div className="px-4 py-3 rounded-2xl text-sm" style={{ background: C.cream, color: C.textMuted, borderRadius: "18px 18px 18px 4px" }}>
-                    Mia está pensando...
-                  </div>
-                </div>
-              )}
-              <div ref={iaEndRef} />
-            </div>
-
-            <div className="px-4 py-3 shrink-0 flex gap-2" style={{ borderTop: `1px solid ${C.border}` }}>
-              <input
-                style={{ ...inputStyle, flex: 1 }}
-                placeholder="Pregúntale a Mia sobre tus finanzas..."
-                value={iaInput}
-                onChange={e => setIaInput(e.target.value)}
-                onKeyDown={e => e.key === "Enter" && sendIA()}
-              />
-              <Btn icon={Send} onClick={sendIA} disabled={!iaInput.trim() || iaLoading}>Enviar</Btn>
-            </div>
-          </Card>
-
-          <div className="flex gap-2 mt-3 flex-wrap">
-            {["¿Cómo van mis finanzas?", "¿Qué productos debo priorizar?", "¿Estoy ganando dinero?", "Dame consejos para crecer"].map(q => (
-              <button key={q} onClick={() => { setIaInput(q); }} className="text-xs px-3 py-1.5 rounded-full" style={{ background: C.surface, border: `1px solid ${C.border}`, color: C.textMuted }}>
-                {q}
-              </button>
-            ))}
-          </div>
         </div>
       )}
     </div>
