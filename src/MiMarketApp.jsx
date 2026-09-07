@@ -1009,11 +1009,12 @@ function MetaGoalSection({ profile, setProfile, sales, showToast }) {
   );
 }
 
-function PanelView({ products, sales, fiados, profile, setProfile, setView, currentUser }) {
+function PanelView({ products, sales, fiados, pedidos, profile, setProfile, setView, currentUser }) {
   const today = todayISO();
   const salesToday = sales.filter(s=>s.datetime.slice(0,10)===today);
   const totalFiado = fiados.filter(f=>f.balance>0).reduce((s,f)=>s+f.balance,0);
   const lowStock   = products.filter(p=>p.stock<=5);
+  const atrasados  = (pedidos||[]).filter(p=>p.fechaEntrega<today && p.estado!=="entregado");
 
   const sumBy = (types) => salesToday.filter(s=>types.includes(s.paymentType)).reduce((s,x)=>s+x.total,0);
   const paymentStats = [
@@ -1044,6 +1045,15 @@ function PanelView({ products, sales, fiados, profile, setProfile, setView, curr
           <AlertTriangle size={18} color={C.amber}/>
           <p className="text-sm flex-1" style={{ color:"#92400E" }}><strong>{lowStock.length} productos</strong> tienen poco o ningún stock.</p>
           <ChevronRight size={16} color={C.amber}/>
+        </div>
+      )}
+
+      {atrasados.length>0 && (
+        <div onClick={()=>setView("pedidos")} className="flex items-center gap-3 px-4 py-3 rounded-xl mb-5 cursor-pointer"
+          style={{ background:C.dangerLight, border:"1px solid #FECACA" }}>
+          <Truck size={18} color={C.danger}/>
+          <p className="text-sm flex-1" style={{ color:C.danger }}><strong>{atrasados.length} pedido{atrasados.length>1?"s":""}</strong> con fecha de entrega vencida.</p>
+          <ChevronRight size={16} color={C.danger}/>
         </div>
       )}
 
@@ -1886,6 +1896,13 @@ const PEDIDO_ESTADOS = [
 ];
 function estadoPedido(id) { return PEDIDO_ESTADOS.find(e => e.id === id) || PEDIDO_ESTADOS[0]; }
 
+function waLink(telefono, mensaje) {
+  const digits = (telefono||"").replace(/\D/g,"");
+  if (!digits) return null;
+  const conCodigo = digits.startsWith("56") ? digits : (digits.startsWith("9") ? "56"+digits : digits);
+  return `https://wa.me/${conCodigo}?text=${encodeURIComponent(mensaje)}`;
+}
+
 function diaLabel(fechaISO) {
   if (!fechaISO) return "Sin fecha";
   const hoy = todayISO();
@@ -2014,23 +2031,66 @@ function calcularGananciaPedido(p, products) {
   return null;
 }
 
-function PedidosView({ pedidos, setPedidos, products, showToast }) {
+function ConfirmarEntregaModal({ pedido, onClose, onConfirm }) {
+  const [metodo, setMetodo] = useState("");
+  const metodos = PAYMENT_METHODS.filter(m=>m.id!=="fiado"&&m.id!=="mixto");
+  return (
+    <Modal title="Confirmar entrega" onClose={onClose} width={400}>
+      <p className="text-sm mb-4" style={{color:C.textMuted}}>Esto va a sumarse a tus Reportes y Contabilidad como una venta de {formatCLP(pedido.precio)}. ¿Cómo pagó el cliente?</p>
+      <div className="grid grid-cols-2 gap-2">
+        {metodos.map(m=>(
+          <button key={m.id} onClick={()=>setMetodo(m.id)} className="flex items-center gap-2 p-3 rounded-xl text-sm font-semibold"
+            style={{border:`1.5px solid ${metodo===m.id?m.color:C.border}`, background:metodo===m.id?m.color+"15":"#fff", color:metodo===m.id?m.color:C.text}}>
+            <m.icon size={16}/> {m.label}
+          </button>
+        ))}
+      </div>
+      <div className="flex justify-end gap-2 mt-6">
+        <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
+        <Btn icon={Check} disabled={!metodo} onClick={()=>onConfirm(metodo)}>Confirmar entrega</Btn>
+      </div>
+    </Modal>
+  );
+}
+
+function PedidosView({ pedidos, setPedidos, products, setProducts, sales, setSales, counters, setCounters, showToast }) {
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
   const [delTarget, setDelTarget] = useState(null);
   const [vista, setVista] = useState("activos"); // "activos" | "historial"
   const [filtroEstado, setFiltroEstado] = useState("todos");
+  const [search, setSearch] = useState("");
+  const [entregaTarget, setEntregaTarget] = useState(null);
 
   const activos = pedidos.filter(p => p.estado !== "entregado");
   const entregados = pedidos.filter(p => p.estado === "entregado");
   const base = vista === "activos" ? activos : entregados;
-  const filtrados = vista === "activos" ? base.filter(p => filtroEstado === "todos" || p.estado === filtroEstado) : base;
+  const filtrados = (vista === "activos" ? base.filter(p => filtroEstado === "todos" || p.estado === filtroEstado) : base)
+    .filter(p => p.cliente.toLowerCase().includes(search.toLowerCase()));
   const ordenados = [...filtrados].sort((a,b) => vista==="activos" ? (a.fechaEntrega||"").localeCompare(b.fechaEntrega||"") : (b.fechaEntrega||"").localeCompare(a.fechaEntrega||""));
   const pendientesCount = pedidos.filter(p=>p.estado==="pendiente").length;
   const hoyCount = pedidos.filter(p=>p.fechaEntrega===todayISO() && p.estado!=="entregado").length;
   const gananciasConocidas = entregados.map(p=>calcularGananciaPedido(p,products)).filter(g=>g!==null);
   const gananciaTotal = gananciasConocidas.reduce((s,g)=>s+g,0);
   const sinDatoCosto = entregados.length - gananciasConocidas.length;
+
+  function confirmarEntrega(pedido, metodo) {
+    const v=counters.voucher+1, b=counters.boleta+1;
+    setCounters({voucher:v, boleta:b});
+    const sale = {
+      id: uid("s"), voucher:"V-"+v, boletaSII:b, datetime:new Date().toISOString(), vendor:"Pedido",
+      paymentType: metodo,
+      items:[{ productId: pedido.tipo==="existente"?pedido.productoId:null, name:pedido.detalle, price:pedido.precio/(pedido.cantidad||1), qty:pedido.cantidad||1 }],
+      total: pedido.precio,
+    };
+    setSales([sale, ...sales]);
+    if (pedido.tipo==="existente" && pedido.productoId) {
+      setProducts(products.map(p=>p.id===pedido.productoId?{...p,stock:Math.max(0,p.stock-(pedido.cantidad||1))}:p));
+    }
+    setPedidos(pedidos.map(x=>x.id===pedido.id?{...x,estado:"entregado"}:x));
+    setEntregaTarget(null);
+    showToast("Pedido entregado — se sumó a tus Reportes");
+  }
 
   return (
     <div>
@@ -2063,6 +2123,8 @@ function PedidosView({ pedidos, setPedidos, products, showToast }) {
         <button onClick={()=>setVista("historial")} className="px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-1.5" style={{background:vista==="historial"?C.ink:C.surface,color:vista==="historial"?"#fff":C.textMuted,border:`1px solid ${C.border}`}}><History size={14}/> Historial ({entregados.length})</button>
       </div>
 
+      <div className="mb-4"><input style={{...inputStyle,maxWidth:280}} value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar por nombre de cliente..." /></div>
+
       {vista==="activos" && (
         <div className="flex gap-2 mb-4 flex-wrap">
           <button onClick={()=>setFiltroEstado("todos")} className="px-3 py-1.5 rounded-lg text-xs font-semibold" style={{background:filtroEstado==="todos"?C.cream:C.surface,color:C.text,border:`1px solid ${C.border}`}}>Todos</button>
@@ -2080,6 +2142,8 @@ function PedidosView({ pedidos, setPedidos, products, showToast }) {
             const est = estadoPedido(p.estado);
             const atrasado = p.fechaEntrega < todayISO() && p.estado !== "entregado";
             const foto = p.foto || (p.productoId && products.find(x=>x.id===p.productoId)?.imageUrl) || "";
+            const mensajeWA = p.estado==="listo" ? `¡Hola ${p.cliente}! Tu pedido de ${p.detalle} ya está listo para retirar 😊` : `¡Hola ${p.cliente}! Tu pedido de ${p.detalle} está en preparación, fecha de entrega: ${formatDate(p.fechaEntrega)}.`;
+            const linkWA = p.telefono ? waLink(p.telefono, mensajeWA) : null;
             return (
               <Card key={p.id} style={{padding:16}}>
                 <div className="flex items-start justify-between gap-3 flex-wrap">
@@ -2103,9 +2167,12 @@ function PedidosView({ pedidos, setPedidos, products, showToast }) {
                     ) : null; })()}
                   </div>
                 </div>
-                <div className="flex items-center gap-2 mt-3 pt-3" style={{borderTop:`1px solid ${C.border}`}}>
+                <div className="flex items-center gap-2 mt-3 pt-3 flex-wrap" style={{borderTop:`1px solid ${C.border}`}}>
                   {vista==="activos" ? PEDIDO_ESTADOS.filter(e=>e.id!==p.estado).map(e=>(
-                    <button key={e.id} onClick={()=>{setPedidos(pedidos.map(x=>x.id===p.id?{...x,estado:e.id}:x)); showToast(e.id==="entregado"?`Pedido entregado — pasó al historial`:`Pedido marcado como "${e.label}"`);}}
+                    <button key={e.id} onClick={()=>{
+                      if (e.id==="entregado") { setEntregaTarget(p); return; }
+                      setPedidos(pedidos.map(x=>x.id===p.id?{...x,estado:e.id}:x)); showToast(`Pedido marcado como "${e.label}"`);
+                    }}
                       className="text-xs font-semibold px-2.5 py-1 rounded-lg" style={{background:e.bg,color:e.fg}}>
                       Marcar {e.label.toLowerCase()}
                     </button>
@@ -2114,6 +2181,12 @@ function PedidosView({ pedidos, setPedidos, products, showToast }) {
                       className="text-xs font-semibold px-2.5 py-1 rounded-lg" style={{background:C.cream,color:C.textMuted}}>
                       ← Devolver a activos
                     </button>
+                  )}
+                  {linkWA && (
+                    <a href={linkWA} target="_blank" rel="noopener noreferrer"
+                      className="text-xs font-semibold px-2.5 py-1 rounded-lg flex items-center gap-1" style={{background:"#DCFCE7",color:"#15803D"}}>
+                      <MessageCircle size={12}/> WhatsApp
+                    </a>
                   )}
                   <div className="flex-1" />
                   {vista==="activos" && <button onClick={()=>{setEditing(p);setShowForm(true);}}><Pencil size={14} color={C.textMuted}/></button>}
@@ -2144,6 +2217,9 @@ function PedidosView({ pedidos, setPedidos, products, showToast }) {
             </div>
           </div>
         </Modal>
+      )}
+      {entregaTarget && (
+        <ConfirmarEntregaModal pedido={entregaTarget} onClose={()=>setEntregaTarget(null)} onConfirm={metodo=>confirmarEntrega(entregaTarget, metodo)} />
       )}
     </div>
   );
@@ -4071,13 +4147,13 @@ export default function App({ session, onLogout, isOwner, onOpenAdmin }) {
 
   const content = (
     <div className="p-4 md:p-7" style={{ paddingBottom: isTablet ? 100 : 32 }}>
-      {view === "panel"      && currentUser.role === "admin" && <PanelView products={products} sales={sales} fiados={fiados} profile={profile} setProfile={setProfile} setView={setView} currentUser={currentUser} />}
+      {view === "panel"      && currentUser.role === "admin" && <PanelView products={products} sales={sales} fiados={fiados} pedidos={pedidos} profile={profile} setProfile={setProfile} setView={setView} currentUser={currentUser} />}
       {view === "inventario" && canAccess("inventario_ver", currentUser.role) && <InventarioView products={products} setProducts={setProducts} showToast={showToast} profile={profile} gastos={gastos} setGastos={setGastos} readOnly={!canAccess("inventario_editar", currentUser.role)} />}
       {view === "venta"                                       && <VentaView {...viewProps} />}
       {view === "reporte"    && canAccess("reporte", currentUser.role) && <ReporteView sales={sales} products={products} />}
       {view === "contabilidad" && canAccess("contabilidad", currentUser.role) && <ContabilidadView sales={sales} products={products} gastos={gastos} setGastos={setGastos} proveedores={proveedores} setProveedores={setProveedores} fiados={fiados} showToast={showToast} />}
       {view === "caja"       && canAccess("caja", currentUser.role) && <CajaView sales={sales} cajaState={cajaState} setCajaState={setCajaState} showToast={showToast} currentUser={currentUser} />}
-      {view === "pedidos"    && canAccess("pedidos", currentUser.role) && profile.modules?.includes("pedidos") && <PedidosView pedidos={pedidos} setPedidos={setPedidos} products={products} showToast={showToast} />}
+      {view === "pedidos"    && canAccess("pedidos", currentUser.role) && profile.modules?.includes("pedidos") && <PedidosView pedidos={pedidos} setPedidos={setPedidos} products={products} setProducts={setProducts} sales={sales} setSales={setSales} counters={counters} setCounters={setCounters} showToast={showToast} />}
       {view === "agenda"     && canAccess("agenda", currentUser.role) && profile.modules?.includes("agenda") && <AgendaView profile={profile} setProfile={setProfile} servicios={servicios} setServicios={setServicios} citas={citas} setCitas={setCitas} users={users} showToast={showToast} />}
       {view === "fiados"     && canAccess("fiados", currentUser.role) && <FiadosView fiados={fiados} setFiados={setFiados} showToast={showToast} />}
       {view === "boletas"    && canAccess("boletas", currentUser.role) && <DetalleBoletaView sales={sales} setSales={setSales} products={products} setProducts={setProducts} showToast={showToast} />}
