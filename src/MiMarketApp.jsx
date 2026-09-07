@@ -2283,17 +2283,23 @@ function ServiciosTab({ profile, setProfile, servicios, setServicios, showToast 
           <div className="flex flex-col gap-2">
             {servicios.map(s => {
               const cs = styleForCategory(s.categoria);
+              const ganancia = s.costoEstimado!==undefined ? s.precio - s.costoEstimado : null;
               return (
                 <div key={s.id} className="flex items-center justify-between p-3 rounded-xl" style={{ background: C.cream }}>
                   <div className="flex items-center gap-3">
+                    {s.foto && <img src={s.foto} alt="" className="rounded-xl object-cover shrink-0" style={{width:44,height:44}} onError={e=>e.target.style.display="none"}/>}
                     <span className="text-xs font-bold px-2 py-1 rounded-md" style={{ background: cs.bg, color: cs.fg }}>{s.categoria}</span>
                     <div>
                       <div className="text-sm font-semibold" style={{ color: C.text }}>{s.nombre}</div>
-                      <div className="text-xs" style={{ color: C.textMuted }}>{s.duracionMin} min</div>
+                      <div className="text-xs" style={{ color: C.textMuted }}>{s.duracionMin} min{s.descripcion?` · ${s.descripcion}`:""}</div>
+                      {s.notas && <div className="text-xs italic" style={{ color: C.textMuted }}>"{s.notas}"</div>}
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
-                    <span className="font-bold text-sm" style={{ fontFamily: FONT_MONO, color: C.text }}>{formatCLP(s.precio)}</span>
+                    <div className="text-right">
+                      <span className="font-bold text-sm block" style={{ fontFamily: FONT_MONO, color: C.text }}>{formatCLP(s.precio)}</span>
+                      {ganancia!==null && <span className="text-xs font-semibold" style={{color:ganancia>=0?C.success:C.danger}}>{ganancia>=0?"+":""}{formatCLP(ganancia)} ganancia</span>}
+                    </div>
                     <button onClick={() => { setEditing(s); setShowForm(true); }}><Pencil size={14} color={C.textMuted} /></button>
                     <button onClick={() => setDelTarget(s)}><Trash2 size={14} color={C.danger} /></button>
                   </div>
@@ -2342,9 +2348,9 @@ function ServiciosTab({ profile, setProfile, servicios, setServicios, showToast 
 }
 
 function ServicioFormModal({ initial, categorias, onClose, onSave }) {
-  const [form, setForm] = useState(initial || { nombre: "", categoria: categorias[0] || "", duracionMin: 30, precio: "" });
+  const [form, setForm] = useState(initial || { nombre: "", categoria: categorias[0] || "", duracionMin: 30, precio: "", descripcion: "", foto: "", notas: "", costoEstimado: "" });
   return (
-    <Modal title={initial ? "Editar servicio" : "Nuevo servicio"} onClose={onClose} width={400}>
+    <Modal title={initial ? "Editar servicio" : "Nuevo servicio"} onClose={onClose} width={440}>
       <div className="flex flex-col gap-4">
         <Field label="Nombre del servicio"><input style={inputStyle} value={form.nombre} onChange={e => setForm({ ...form, nombre: e.target.value })} placeholder="Ej: Depilación cejas" /></Field>
         <Field label="Categoría"><select style={inputStyle} value={form.categoria} onChange={e => setForm({ ...form, categoria: e.target.value })}>{categorias.map(c => <option key={c}>{c}</option>)}</select></Field>
@@ -2352,10 +2358,33 @@ function ServicioFormModal({ initial, categorias, onClose, onSave }) {
           <Field label="Duración (minutos)"><input type="number" min="5" step="5" style={inputStyle} value={form.duracionMin} onChange={e => setForm({ ...form, duracionMin: e.target.value })} /></Field>
           <Field label="Precio"><input type="number" min="0" style={inputStyle} value={form.precio} onChange={e => setForm({ ...form, precio: e.target.value })} placeholder="0" /></Field>
         </div>
+        <Field label="Descripción (opcional)"><input style={inputStyle} value={form.descripcion} onChange={e => setForm({ ...form, descripcion: e.target.value })} placeholder="Qué incluye este servicio" /></Field>
+        <Field label="Costo estimado (opcional)">
+          <input type="number" min="0" style={inputStyle} value={form.costoEstimado} onChange={e => setForm({ ...form, costoEstimado: e.target.value })} placeholder="Insumos o materiales que usas" />
+        </Field>
+        <Field label="Notas internas (opcional)"><input style={inputStyle} value={form.notas} onChange={e => setForm({ ...form, notas: e.target.value })} placeholder="Solo la vas a ver tú" /></Field>
+        <Field label="Foto (opcional)">
+          <div className="flex items-center gap-3">
+            <label className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-sm cursor-pointer shrink-0"
+              style={{ background: C.orangeLight, color: C.orangeDark, border: `1.5px solid ${C.orange}30` }}>
+              <Camera size={16} />
+              Subir foto
+              <input type="file" accept="image/*" className="hidden" onChange={e=>{
+                const file = e.target.files?.[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = ev => setForm(f=>({...f, foto: ev.target.result}));
+                reader.readAsDataURL(file);
+              }} />
+            </label>
+            {form.foto && <img src={form.foto} alt="preview" className="rounded-xl object-cover shrink-0" style={{width:44,height:44}} onError={e=>e.target.style.display="none"}/>}
+            {form.foto && <button type="button" onClick={()=>setForm(f=>({...f,foto:""}))} className="text-xs font-semibold" style={{color:C.danger}}>Quitar</button>}
+          </div>
+        </Field>
       </div>
       <div className="flex justify-end gap-2 mt-6">
         <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
-        <Btn icon={Check} disabled={!form.nombre.trim() || !form.categoria} onClick={() => onSave({ ...form, duracionMin: Number(form.duracionMin) || 30, precio: Number(form.precio) || 0 })}>Guardar</Btn>
+        <Btn icon={Check} disabled={!form.nombre.trim() || !form.categoria} onClick={() => onSave({ ...form, duracionMin: Number(form.duracionMin) || 30, precio: Number(form.precio) || 0, costoEstimado: form.costoEstimado!==""?Number(form.costoEstimado):undefined })}>Guardar</Btn>
       </div>
     </Modal>
   );
@@ -2485,15 +2514,24 @@ function CierreMesTab({ citas, servicios }) {
   completadas.forEach(c => { porServicio[c.servicioNombre] = (porServicio[c.servicioNombre] || 0) + 1; });
   const topServicios = Object.entries(porServicio).sort((a, b) => b[1] - a[1]).slice(0, 6);
   const chartData = topServicios.map(([name, count]) => ({ name: name.length > 14 ? name.slice(0, 14) + "…" : name, citas: count }));
+  const gananciasConocidas = completadas.map(c => {
+    const srv = servicios.find(s=>s.id===c.servicioId);
+    return srv && srv.costoEstimado!==undefined ? c.precio - srv.costoEstimado : null;
+  }).filter(g=>g!==null);
+  const gananciaTotal = gananciasConocidas.reduce((s,g)=>s+g,0);
 
   return (
     <div className="flex flex-col gap-5">
       <Field label="Mes a revisar"><input type="month" style={{ ...inputStyle, maxWidth: 200 }} value={mes} onChange={e => setMes(e.target.value)} /></Field>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         <Card style={{ padding: 18 }}>
           <div className="text-xs font-semibold mb-1" style={{ color: C.textMuted }}>Total facturado</div>
           <div className="text-xl font-bold" style={{ fontFamily: FONT_MONO, color: C.success }}>{formatCLP(totalFacturado)}</div>
+        </Card>
+        <Card style={{ padding: 18 }}>
+          <div className="text-xs font-semibold mb-1" style={{ color: C.textMuted }}>Ganancia estimada</div>
+          <div className="text-xl font-bold" style={{ fontFamily: FONT_MONO, color: gananciaTotal>=0?C.success:C.danger }}>{formatCLP(gananciaTotal)}</div>
         </Card>
         <Card style={{ padding: 18 }}>
           <div className="text-xs font-semibold mb-1" style={{ color: C.textMuted }}>Citas del mes</div>
