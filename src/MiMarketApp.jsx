@@ -2356,12 +2356,29 @@ function ServicioFormModal({ initial, categorias, onClose, onSave }) {
         <Field label="Categoría"><select style={inputStyle} value={form.categoria} onChange={e => setForm({ ...form, categoria: e.target.value })}>{categorias.map(c => <option key={c}>{c}</option>)}</select></Field>
         <div className="grid grid-cols-2 gap-4">
           <Field label="Duración (minutos)"><input type="number" min="5" step="5" style={inputStyle} value={form.duracionMin} onChange={e => setForm({ ...form, duracionMin: e.target.value })} /></Field>
-          <Field label="Precio"><input type="number" min="0" style={inputStyle} value={form.precio} onChange={e => setForm({ ...form, precio: e.target.value })} placeholder="0" /></Field>
+          <Field label="Precio de venta"><input type="number" min="0" style={inputStyle} value={form.precio} onChange={e => setForm({ ...form, precio: e.target.value })} placeholder="0" /></Field>
         </div>
         <Field label="Descripción (opcional)"><input style={inputStyle} value={form.descripcion} onChange={e => setForm({ ...form, descripcion: e.target.value })} placeholder="Qué incluye este servicio" /></Field>
         <Field label="Costo estimado (opcional)">
           <input type="number" min="0" style={inputStyle} value={form.costoEstimado} onChange={e => setForm({ ...form, costoEstimado: e.target.value })} placeholder="Insumos o materiales que usas" />
         </Field>
+        {form.precio!=="" && form.costoEstimado!=="" && (()=>{
+          const precio = Number(form.precio)||0, costo = Number(form.costoEstimado)||0;
+          const ganancia = precio - costo;
+          const margen = precio>0 ? (ganancia/precio*100).toFixed(0) : 0;
+          return (
+            <div className="flex items-center justify-between p-3 rounded-xl" style={{background:ganancia>=0?C.successLight:C.dangerLight}}>
+              <div>
+                <div className="text-xs font-semibold" style={{color:C.textMuted}}>Ganancia estimada</div>
+                <div className="text-lg font-bold" style={{fontFamily:FONT_MONO,color:ganancia>=0?C.success:C.danger}}>{ganancia>=0?"+":""}{formatCLP(ganancia)}</div>
+              </div>
+              <div className="text-right">
+                <div className="text-xs font-semibold" style={{color:C.textMuted}}>Margen</div>
+                <div className="text-lg font-bold" style={{fontFamily:FONT_MONO,color:ganancia>=0?C.success:C.danger}}>{margen}%</div>
+              </div>
+            </div>
+          );
+        })()}
         <Field label="Notas internas (opcional)"><input style={inputStyle} value={form.notas} onChange={e => setForm({ ...form, notas: e.target.value })} placeholder="Solo la vas a ver tú" /></Field>
         <Field label="Foto (opcional)">
           <div className="flex items-center gap-3">
