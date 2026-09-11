@@ -356,6 +356,26 @@ function Field({ label, children }) {
 
 const inputStyle = { width:"100%", padding:"9px 12px", borderRadius:"10px", border:`1px solid ${C.border}`, fontSize:"14px", fontFamily:FONT_BODY, color:C.text, background:"#fff", outline:"none" };
 
+// Campo de plata: siempre interpreta números como pesos chilenos (sin decimales),
+// nunca confunde el punto con una coma decimal. onChange recibe un número plano.
+function MoneyInput({ value, onChange, placeholder, style, autoFocus }) {
+  const display = (value === "" || value === undefined || value === null) ? "" : Number(value).toLocaleString("es-CL");
+  return (
+    <input
+      type="text"
+      inputMode="numeric"
+      autoFocus={autoFocus}
+      style={style || inputStyle}
+      value={display}
+      placeholder={placeholder}
+      onChange={e => {
+        const digits = e.target.value.replace(/\D/g, "");
+        onChange(digits === "" ? "" : Number(digits));
+      }}
+    />
+  );
+}
+
 function Modal({ title, onClose, children, width=480 }) {
   return (
     <div className="fixed inset-0 flex items-center justify-center p-4 z-50" style={{ background:"rgba(120,53,15,0.35)" }} onClick={onClose}>
@@ -2810,6 +2830,8 @@ function ReporteView({ sales, products }) {
 function CajaView({ sales, cajaState, setCajaState, showToast, currentUser }) {
   const [closeModal,setCloseModal]=useState(false);
   const [openModal,setOpenModal]=useState(false);
+  const [editAperturaModal,setEditAperturaModal]=useState(false);
+  const [editAperturaInput,setEditAperturaInput]=useState("");
   const [openingInput,setOpeningInput]=useState("");
   const [counted,setCounted]=useState("");
   const today=todayISO();
@@ -2826,6 +2848,14 @@ function CajaView({ sales, cajaState, setCajaState, showToast, currentUser }) {
     setCajaState({isOpen:true,openedAt:now,openingAmount:monto,turnos:[{id:uid("t"),vendor:currentUser.name,apertura:now,cierre:null,ventasTurno:0,montoApertura:monto,montoContado:null,diferencia:null},...turnos]});
     setOpenModal(false); setOpeningInput("");
     showToast("Caja abierta");
+  }
+
+  function guardarEditApertura() {
+    const monto = Number(editAperturaInput)||0;
+    const nuevosTurnos = turnos.map((tr,i)=>i===0?{...tr,montoApertura:monto}:tr);
+    setCajaState({...cajaState, openingAmount:monto, turnos:nuevosTurnos});
+    setEditAperturaModal(false);
+    showToast("Monto de apertura corregido");
   }
 
   function cerrarCaja() {
@@ -2845,7 +2875,14 @@ function CajaView({ sales, cajaState, setCajaState, showToast, currentUser }) {
           <div className="w-11 h-11 rounded-xl flex items-center justify-center" style={{background:cajaState.isOpen?C.successLight:C.dangerLight}}><Wallet size={20} color={cajaState.isOpen?C.success:C.danger}/></div>
           <div>
             <div className="font-bold text-sm" style={{color:C.text}}>{cajaState.isOpen?"Caja abierta":"Caja cerrada"}</div>
-            <div className="text-xs" style={{color:C.textMuted}}>Apertura: {formatCLP(cajaState.openingAmount)} · {formatDateTime(cajaState.openedAt)}</div>
+            <div className="text-xs flex items-center gap-1.5" style={{color:C.textMuted}}>
+              Apertura: {formatCLP(cajaState.openingAmount)} · {formatDateTime(cajaState.openedAt)}
+              {cajaState.isOpen && currentUser.role==="admin" && (
+                <button onClick={()=>{setEditAperturaInput(cajaState.openingAmount);setEditAperturaModal(true);}} title="Corregir monto de apertura">
+                  <Pencil size={11} color={C.textMuted}/>
+                </button>
+              )}
+            </div>
             {cajaState.isOpen && <div className="text-xs mt-0.5 flex items-center gap-1" style={{color:C.teal}}><UserCheck size={11}/> Turno: {currentUser.name}</div>}
           </div>
         </div>
@@ -2885,9 +2922,19 @@ function CajaView({ sales, cajaState, setCajaState, showToast, currentUser }) {
         </Card>
       )}
 
+      {editAperturaModal&&(
+        <Modal title="Corregir monto de apertura" onClose={()=>setEditAperturaModal(false)} width={380}>
+          <Field label="¿Con cuánto efectivo abriste la caja realmente?"><MoneyInput value={editAperturaInput} onChange={setEditAperturaInput} placeholder="0" autoFocus/></Field>
+          <div className="flex justify-end gap-2 mt-6">
+            <Btn variant="ghost" onClick={()=>setEditAperturaModal(false)}>Cancelar</Btn>
+            <Btn onClick={guardarEditApertura} disabled={editAperturaInput===""}>Guardar corrección</Btn>
+          </div>
+        </Modal>
+      )}
+
       {openModal&&(
         <Modal title="Abrir caja" onClose={()=>setOpenModal(false)} width={380}>
-          <Field label="¿Con cuánto efectivo abres la caja?"><input type="number" min="0" style={inputStyle} value={openingInput} onChange={e=>setOpeningInput(e.target.value)} placeholder="0" autoFocus/></Field>
+          <Field label="¿Con cuánto efectivo abres la caja?"><MoneyInput value={openingInput} onChange={setOpeningInput} placeholder="0" autoFocus/></Field>
           <div className="flex justify-end gap-2 mt-6">
             <Btn variant="ghost" onClick={()=>setOpenModal(false)}>Cancelar</Btn>
             <Btn onClick={abrirCaja} disabled={openingInput===""}>Abrir caja</Btn>
@@ -2897,7 +2944,7 @@ function CajaView({ sales, cajaState, setCajaState, showToast, currentUser }) {
 
       {closeModal&&(
         <Modal title="Cerrar caja" onClose={()=>setCloseModal(false)} width={400}>
-          <Field label="Efectivo contado físicamente"><input type="number" style={inputStyle} value={counted} onChange={e=>setCounted(e.target.value)} placeholder="0"/></Field>
+          <Field label="Efectivo contado físicamente"><MoneyInput value={counted} onChange={setCounted} placeholder="0"/></Field>
           {counted!==""&&<p className="text-sm mt-3 font-semibold" style={{color:diff===0?C.success:diff>0?C.teal:C.danger}}>{diff===0?"Caja cuadrada ✓":diff>0?`Sobrante de ${formatCLP(diff)}`:`Faltante de ${formatCLP(-diff)}`}</p>}
           <div className="flex justify-end gap-2 mt-6">
             <Btn variant="ghost" onClick={()=>setCloseModal(false)}>Cancelar</Btn>
