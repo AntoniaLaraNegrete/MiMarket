@@ -2836,6 +2836,8 @@ function CajaView({ sales, cajaState, setCajaState, showToast, currentUser }) {
   const [counted,setCounted]=useState("");
   const today=todayISO();
   const turnos = cajaState.turnos || [];
+  const [filtroFecha, setFiltroFecha] = useState("");
+  const turnosFiltrados = turnos.filter(t => !filtroFecha || t.apertura.slice(0,10)===filtroFecha);
   const salesToday=sales.filter(s=>s.datetime.slice(0,10)===today);
   const cashSales=salesToday.filter(s=>s.paymentType==="efectivo").reduce((s,x)=>s+x.total,0);
   const expected=cajaState.openingAmount+cashSales;
@@ -2904,10 +2906,19 @@ function CajaView({ sales, cajaState, setCajaState, showToast, currentUser }) {
 
       {turnos.length > 0 && (
         <Card style={{overflow:"hidden"}}>
-          <div className="px-4 py-3 font-bold text-sm" style={{borderBottom:`1px solid ${C.border}`, fontFamily:FONT_DISPLAY, color:C.text}}>Turnos recientes</div>
+          <div className="px-4 py-3 flex items-center justify-between flex-wrap gap-2" style={{borderBottom:`1px solid ${C.border}`}}>
+            <span className="font-bold text-sm" style={{fontFamily:FONT_DISPLAY, color:C.text}}>Turnos recientes</span>
+            <div className="flex items-center gap-2">
+              <input type="date" style={{...inputStyle, width:"auto", padding:"6px 10px", fontSize:"13px"}} value={filtroFecha} onChange={e=>setFiltroFecha(e.target.value)} />
+              {filtroFecha && <button onClick={()=>setFiltroFecha("")} className="text-xs font-semibold" style={{color:C.orange}}>Limpiar</button>}
+            </div>
+          </div>
+          {turnosFiltrados.length===0 ? (
+            <div className="px-4 py-8 text-center text-sm" style={{color:C.textMuted}}>No hay turnos en esa fecha</div>
+          ) : (
           <table className="w-full text-sm">
             <thead><tr style={{background:C.cream}}>{["Vendedora","Apertura","Cierre","Ventas del turno","Cuadratura"].map(h=><th key={h} className="text-left px-4 py-3 font-semibold text-xs" style={{color:C.textMuted}}>{h}</th>)}</tr></thead>
-            <tbody>{turnos.map(t=>(
+            <tbody>{turnosFiltrados.map(t=>(
               <tr key={t.id} style={{borderTop:`1px solid ${C.border}`}}>
                 <td className="px-4 py-3 flex items-center gap-2"><div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white" style={{background:C.orange}}>{t.vendor.split(" ").map(w=>w[0]).join("").slice(0,2)}</div>{t.vendor}</td>
                 <td className="px-4 py-3 text-xs" style={{color:C.textMuted}}>{formatDateTime(t.apertura)}</td>
@@ -2919,6 +2930,7 @@ function CajaView({ sales, cajaState, setCajaState, showToast, currentUser }) {
               </tr>
             ))}</tbody>
           </table>
+          )}
         </Card>
       )}
 
