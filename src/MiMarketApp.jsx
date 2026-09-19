@@ -298,6 +298,38 @@ function formatDate(iso) { return new Date(iso + (iso.length === 10 ? "T00:00:00
 function formatDateTime(iso) { const d = new Date(iso); return d.toLocaleDateString("es-CL") + " " + d.toLocaleTimeString("es-CL", { hour: "2-digit", minute: "2-digit" }); }
 function uid(p) { return p + Math.random().toString(36).slice(2, 9); }
 
+// Comprime cualquier foto subida (producto, pedido, servicio, logo) antes de
+// guardarla, para que la base de datos nunca se llene de fotos pesadas.
+function comprimirImagen(file, maxAncho = 800, calidad = 0.75) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = reject;
+    reader.onload = (ev) => {
+      const img = new Image();
+      img.onerror = reject;
+      img.onload = () => {
+        const ratio = Math.min(1, maxAncho / img.width);
+        const canvas = document.createElement("canvas");
+        canvas.width = img.width * ratio;
+        canvas.height = img.height * ratio;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL("image/jpeg", calidad));
+      };
+      img.src = ev.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+// Encripta un PIN de 4 dígitos (SHA-256) para no guardarlo como texto plano.
+// Nunca se puede "desencriptar" — solo comparar si dos PIN dan el mismo resultado.
+async function hashPin(pin) {
+  const enc = new TextEncoder().encode("mimarket_pin_" + pin);
+  const digest = await crypto.subtle.digest("SHA-256", enc);
+  return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, "0")).join("");
+}
+
 function buildSeedSales(products) {
   const methods = ["efectivo","efectivo","debito","debito","credito","transferencia"];
   const sales = []; let voucher = 1029, boleta = 8799;
@@ -542,23 +574,56 @@ function CreateAccountScreen({ onCreated }) {
 }
 
 
-function LoginScreen({ users, onLogin, onCancel }) {
+function LoginScreen({ users, onLogin, onCancel, onIntentoBloqueado }) {
   const [sel, setSel] = useState(null);
   const [pin, setPin] = useState("");
   const [err, setErr] = useState("");
+  const [fails, setFails] = useState(0);
+  const [lockedUntil, setLockedUntil] = useState(0);
+  const [, setTick] = useState(0);
+
+  useEffect(() => {
+    if (!lockedUntil) return;
+    const t = setInterval(() => {
+      if (Date.now() >= lockedUntil) {
+        setLockedUntil(0);
+        setErr("");
+      } else {
+        setTick(x => x + 1);
+      }
+    }, 500);
+    return () => clearInterval(t);
+  }, [lockedUntil]);
+
+  const bloqueado = lockedUntil > Date.now();
+  const segundosRestantes = bloqueado ? Math.ceil((lockedUntil - Date.now()) / 1000) : 0;
 
   function selectUser(u) {
     if (!u.pin) { onLogin(u); return; }
-    setSel(u); setPin(""); setErr("");
+    setSel(u); setPin(""); setErr(""); setFails(0); setLockedUntil(0);
   }
 
   function digit(d) {
+    if (bloqueado) return;
     if (pin.length >= 4) return;
     const next = pin + d; setPin(next); setErr("");
     if (next.length === 4) {
-      setTimeout(() => {
-        if (next === sel.pin) onLogin(sel);
-        else { setErr("PIN incorrecto"); setPin(""); }
+      setTimeout(async () => {
+        const hashed = await hashPin(next);
+        if (hashed === sel.pin) { setFails(0); onLogin(sel); }
+        else {
+          const nuevosFallos = fails + 1;
+          setFails(nuevosFallos);
+          setPin("");
+          if (nuevosFallos >= 5) {
+            setLockedUntil(Date.now() + 30000);
+            setFails(0);
+            setErr("Demasiados intentos. Espera 30 segundos.");
+            if (onIntentoBloqueado) onIntentoBloqueado(sel);
+          } else {
+            setErr(`PIN incorrecto (intento ${nuevosFallos} de 5)`);
+          }
+        }
       }, 120);
     }
   }
@@ -637,17 +702,18 @@ function LoginScreen({ users, onLogin, onCancel }) {
               ))}
             </div>
             {err ? (
-              <p className="text-xs font-medium mb-2 text-center" style={{ color: C.danger }}>{err}</p>
+              <p className="text-xs font-medium mb-2 text-center" style={{ color: C.danger }}>{bloqueado ? `Demasiados intentos. Espera ${segundosRestantes}s.` : err}</p>
             ) : <div className="mb-2 h-3" />}
 
             <div className="grid grid-cols-3 gap-2 w-full max-w-[220px]">
               {["1", "2", "3", "4", "5", "6", "7", "8", "9", "", "0", "⌫"].map(d => (
-                <button key={d} onClick={() => d === "⌫" ? setPin(p => p.slice(0, -1)) : d !== "" ? digit(d) : null} disabled={d === ""}
-                  className="h-12 rounded-2xl font-bold text-lg disabled:opacity-0 transition-all active:scale-95"
+                <button key={d} onClick={() => d === "⌫" ? setPin(p => p.slice(0, -1)) : d !== "" ? digit(d) : null} disabled={d === "" || bloqueado}
+                  className="h-12 rounded-2xl font-bold text-lg transition-all active:scale-95"
                   style={{
                     background: d === "⌫" ? C.cream : "#fff", color: C.text,
                     border: `1.5px solid ${C.border}`, fontFamily: FONT_MONO,
                     boxShadow: d === "⌫" ? "none" : "0 2px 6px rgba(15,23,41,0.04)",
+                    opacity: d === "" ? 0 : bloqueado ? 0.35 : 1,
                   }}>
                   {d}
                 </button>
@@ -661,25 +727,66 @@ function LoginScreen({ users, onLogin, onCancel }) {
 }
 
 /* ============================== NOTIFICACIONES ============================== */
-function NotificationBell({ products, fiados, sales, dark }) {
+function NotificationBell({ products, fiados, sales, pedidos, citas, cajaState, seguridadLog, vistos, setVistos, dark }) {
   const [open, setOpen] = useState(false);
 
-  const alerts = useMemo(() => {
+  const todas = useMemo(() => {
     const list = [];
-    products.filter(p => p.stock === 0).forEach(p =>
-      list.push({ type: "danger", msg: `Sin stock: ${p.name}`, icon: AlertTriangle }));
-    products.filter(p => p.stock > 0 && p.stock <= 3).forEach(p =>
-      list.push({ type: "amber", msg: `Stock crítico: ${p.name} (${p.stock} uds.)`, icon: AlertTriangle }));
-    const hace30 = daysAgoISO(30);
-    fiados.filter(f => f.balance > 0 && f.history.some(h => h.type === "cargo" && h.date <= hace30)).forEach(f =>
-      list.push({ type: "amber", msg: `Fiado sin pagar +30 días: ${f.name} (${formatCLP(f.balance)})`, icon: Coins }));
     const hoy = todayISO();
+    products.filter(p => p.stock === 0).forEach(p =>
+      list.push({ id:`stock0:${p.id}`, type: "danger", msg: `Sin stock: ${p.name}`, icon: AlertTriangle }));
+    products.filter(p => p.stock > 0 && p.stock <= 3).forEach(p =>
+      list.push({ id:`stockbajo:${p.id}:${p.stock}`, type: "amber", msg: `Stock crítico: ${p.name} (${p.stock} uds.)`, icon: AlertTriangle }));
+    products.filter(p => p.fechaVencimiento).forEach(p => {
+      const dias = Math.ceil((new Date(p.fechaVencimiento+"T00:00:00")-new Date(hoy+"T00:00:00"))/86400000);
+      if (dias < 0) list.push({ id:`venc:${p.id}`, type: "danger", msg: `Vencido: ${p.name} (hace ${-dias}d)`, icon: AlertTriangle });
+      else if (dias <= 7) list.push({ id:`venc:${p.id}`, type: "danger", msg: `Vence muy pronto: ${p.name} (${dias}d)`, icon: AlertTriangle });
+      else if (dias <= 30) list.push({ id:`venc:${p.id}`, type: "amber", msg: `Por vencer: ${p.name} (${dias}d)`, icon: AlertTriangle });
+    });
+    (pedidos||[]).filter(p => p.fechaEntrega < hoy && p.estado !== "entregado").forEach(p =>
+      list.push({ id:`pedatr:${p.id}`, type: "danger", msg: `Pedido atrasado: ${p.cliente} (${p.detalle})`, icon: Truck }));
+
+    // Caja que quedó abierta de un día anterior
+    if (cajaState?.isOpen && cajaState.openedAt && cajaState.openedAt.slice(0,10) < hoy) {
+      list.push({ id:`cajaabierta:${cajaState.openedAt.slice(0,10)}`, type: "danger", msg: `La caja quedó abierta desde el ${formatDate(cajaState.openedAt.slice(0,10))} — recuerda cerrarla`, icon: Wallet });
+    }
+    // Cierres de caja descuadrados (sobró o faltó plata)
+    (cajaState?.turnos||[]).filter(t => t.cierre && t.diferencia != null && t.diferencia !== 0).slice(0,5).forEach(t =>
+      list.push({ id:`descuadre:${t.id}`, type: "danger",
+        msg: `Caja descuadrada (${t.vendor}, ${formatDate(t.cierre.slice(0,10))}): ${t.diferencia>0?`sobraron ${formatCLP(t.diferencia)}`:`faltaron ${formatCLP(-t.diferencia)}`}`,
+        icon: Wallet }));
+    // Citas agendadas para hoy
+    (citas||[]).filter(c => c.fecha === hoy).sort((a,b)=>a.hora.localeCompare(b.hora)).forEach(c =>
+      list.push({ id:`citahoy:${c.id}`, type: "info", msg: `Cita hoy ${c.hora}: ${c.servicioNombre} — ${c.cliente}`, icon: Clock }));
+
+    const hace48h = Date.now() - 48*60*60*1000;
+    (seguridadLog||[]).filter(s => new Date(s.fecha).getTime() >= hace48h).forEach(s =>
+      list.push({ id:`sec:${s.id}`, type: "danger", msg: `Posible intento no autorizado: PIN de "${s.nombre}" bloqueado (${formatDateTime(s.fecha)})`, icon: Lock }));
+    const hace30 = daysAgoISO(30);
+    fiados.filter(f => f.balance > 0 && (f.history||[]).some(h => h.type === "cargo" && h.date <= hace30)).forEach(f =>
+      list.push({ id:`fiado:${f.id}`, type: "amber", msg: `Fiado sin pagar +30 días: ${f.name} (${formatCLP(f.balance)})`, icon: Coins }));
     const ventasHoy = sales.filter(s => s.datetime.slice(0,10) === hoy);
-    if (ventasHoy.length === 0) list.push({ type: "info", msg: "Sin ventas registradas hoy", icon: ShoppingCart });
-    const grandes = ventasHoy.filter(s => s.total > 50000);
-    grandes.forEach(s => list.push({ type: "success", msg: `Venta grande: ${formatCLP(s.total)} (${s.voucher})`, icon: TrendingUp }));
+    if (ventasHoy.length === 0) list.push({ id:`sinventas:${hoy}`, type: "info", msg: "Sin ventas registradas hoy", icon: ShoppingCart });
+    ventasHoy.filter(s => s.total > 50000).forEach(s =>
+      list.push({ id:`ventagrande:${s.id}`, type: "success", msg: `Venta grande: ${formatCLP(s.total)} (${s.voucher})`, icon: TrendingUp }));
     return list;
-  }, [products, fiados, sales]);
+  }, [products, fiados, sales, pedidos, citas, cajaState, seguridadLog]);
+
+  // Un aviso marcado como visto deja de contar por 24 horas; si el problema
+  // sigue al día siguiente, vuelve a aparecer.
+  const vistosVigentes = useMemo(() => {
+    const limite = Date.now() - 24*60*60*1000;
+    return (vistos||[]).filter(v => v.ts >= limite);
+  }, [vistos]);
+  const idsVistos = new Set(vistosVigentes.map(v => v.id));
+  const alerts = todas.filter(a => !idsVistos.has(a.id));
+
+  function marcarVisto(id) {
+    setVistos([...vistosVigentes, { id, ts: Date.now() }]);
+  }
+  function marcarTodos() {
+    setVistos([...vistosVigentes, ...alerts.map(a => ({ id: a.id, ts: Date.now() }))]);
+  }
 
   const colorMap = { danger: C.danger, amber: C.amber, success: C.success, info: C.navy };
   const bgMap    = { danger: C.dangerLight, amber: C.amberLight, success: C.successLight, info: C.navyLight };
@@ -701,20 +808,30 @@ function NotificationBell({ products, fiados, sales, dark }) {
           style={{ background: "#fff", border: `1px solid ${C.border}` }}>
           <div className="px-4 py-3 flex items-center justify-between" style={{ borderBottom: `1px solid ${C.border}` }}>
             <span className="font-bold text-sm" style={{ fontFamily: FONT_DISPLAY, color: C.text }}>Notificaciones</span>
-            <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: C.cream, color: C.textMuted }}>{alerts.length}</span>
+            {alerts.length > 0
+              ? <button onClick={marcarTodos} className="text-xs font-semibold" style={{ color: C.orange }}>Marcar todas como vistas</button>
+              : <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: C.cream, color: C.textMuted }}>0</span>}
           </div>
           <div className="max-h-72 overflow-y-auto">
             {alerts.length === 0 ? (
               <div className="p-4 text-xs text-center" style={{ color: C.textMuted }}>Todo en orden ✓</div>
-            ) : alerts.map((a, i) => (
-              <div key={i} className="flex items-start gap-3 px-4 py-3" style={{ borderBottom: `1px solid ${C.border}`, background: bgMap[a.type] + "55" }}>
+            ) : alerts.map(a => (
+              <div key={a.id} className="flex items-start gap-3 px-4 py-3" style={{ borderBottom: `1px solid ${C.border}`, background: bgMap[a.type] + "55" }}>
                 <div className="w-6 h-6 rounded-lg flex items-center justify-center shrink-0 mt-0.5" style={{ background: bgMap[a.type] }}>
                   <a.icon size={12} color={colorMap[a.type]} />
                 </div>
-                <span className="text-xs" style={{ color: C.text }}>{a.msg}</span>
+                <span className="text-xs flex-1" style={{ color: C.text }}>{a.msg}</span>
+                <button onClick={() => marcarVisto(a.id)} title="Marcar como vista" className="shrink-0 mt-0.5">
+                  <X size={12} color={C.textMuted} />
+                </button>
               </div>
             ))}
           </div>
+          {alerts.length > 0 && (
+            <div className="px-4 py-2 text-[10px] text-center" style={{ borderTop: `1px solid ${C.border}`, color: C.textMuted }}>
+              Los avisos marcados vuelven a aparecer mañana si el problema sigue
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -764,7 +881,7 @@ function useIsTablet() {
 }
 
 /* ── Sidebar profesional (PC y tablet landscape) ── */
-function Sidebar({ view, setView, currentUser, onLogout, onSwitchUser, profile, cajaState, products, fiados, sales, isOwner, onOpenAdmin }) {
+function Sidebar({ view, setView, currentUser, onLogout, onSwitchUser, profile, cajaState, products, fiados, sales, pedidos, citas, seguridadLog, avisosVistos, setAvisosVistos, isOwner, onOpenAdmin }) {
   const vendorPerms = { ...DEFAULT_VENDOR_PERMS, ...(profile?.vendorPerms || {}) };
   const visible = NAV_ITEMS.filter(i => i.roles.includes(currentUser.role) && (!i.module || profile?.modules?.includes(i.module)) && (currentUser.role === "admin" || !i.permKey || vendorPerms[i.permKey]));
   const initials = currentUser.name.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase();
@@ -843,7 +960,7 @@ function Sidebar({ view, setView, currentUser, onLogout, onSwitchUser, profile, 
 
       {/* User + logout */}
       <div style={{ padding: "12px 14px", borderTop: `1px solid ${C.inkLine}` }}>
-        <NotificationBell products={products} fiados={fiados} sales={sales} dark />
+        <NotificationBell products={products} fiados={fiados} sales={sales} pedidos={pedidos} citas={citas} cajaState={cajaState} seguridadLog={seguridadLog} vistos={avisosVistos} setVistos={setAvisosVistos} dark />
         <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderRadius: 10, marginTop: 6, background: C.inkLine }}>
           <div style={{ width: 32, height: 32, borderRadius: "50%", background: C.orange, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: "#fff", flexShrink: 0 }}>
             {initials}
@@ -869,7 +986,7 @@ function Sidebar({ view, setView, currentUser, onLogout, onSwitchUser, profile, 
 }
 
 /* ── Topbar (solo en móvil/tablet portrait) ── */
-function MobileTopbar({ view, setView, currentUser, onLogout, onSwitchUser, profile, cajaState, products, fiados, sales, isOwner, onOpenAdmin }) {
+function MobileTopbar({ view, setView, currentUser, onLogout, onSwitchUser, profile, cajaState, products, fiados, sales, pedidos, citas, seguridadLog, avisosVistos, setAvisosVistos, isOwner, onOpenAdmin }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const vendorPerms = { ...DEFAULT_VENDOR_PERMS, ...(profile?.vendorPerms || {}) };
   const visible = NAV_ITEMS.filter(i => i.roles.includes(currentUser.role) && (!i.module || profile?.modules?.includes(i.module)) && (currentUser.role === "admin" || !i.permKey || vendorPerms[i.permKey]));
@@ -895,7 +1012,7 @@ function MobileTopbar({ view, setView, currentUser, onLogout, onSwitchUser, prof
           <span style={{ color: "#fff", fontWeight: 700, fontSize: 15, fontFamily: FONT_DISPLAY }}>MiMarket</span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <NotificationBell products={products} fiados={fiados} sales={sales} dark />
+          <NotificationBell products={products} fiados={fiados} sales={sales} pedidos={pedidos} citas={citas} cajaState={cajaState} seguridadLog={seguridadLog} vistos={avisosVistos} setVistos={setAvisosVistos} dark />
           <div style={{ width: 32, height: 32, borderRadius: "50%", background: C.orange, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: "#fff" }}>
             {initials}
           </div>
@@ -954,7 +1071,7 @@ function MetaGoalModal({ initial, onClose, onSave }) {
   return (
     <Modal title={initial ? "Editar meta" : "Agregar meta"} onClose={onClose} width={380}>
       <div className="flex flex-col gap-4">
-        <Field label="Monto de la meta"><input type="number" style={inputStyle} value={amount} onChange={e=>setAmount(e.target.value)} placeholder="Ej: 500000" /></Field>
+        <Field label="Monto de la meta"><MoneyInput value={amount} onChange={setAmount} placeholder="Ej: 500.000" /></Field>
         <Field label="Finaliza la meta"><input type="date" style={inputStyle} value={deadline} onChange={e=>setDeadline(e.target.value)} /></Field>
       </div>
       <div className="flex justify-end gap-2 mt-6">
@@ -1195,7 +1312,7 @@ function ProductFinancialPanel({ salePrice, purchasePrice, stock }) {
 
 function ProductFormModal({ initial, categories, onClose, onSave }) {
   const cats = categories && categories.length ? categories : CATEGORIES;
-  const [form, setForm] = useState(initial||{ name:"", format:"Unidad", unitsPerPackage:"", category:cats[0], salePrice:"", purchasePrice:"", stock:"", barcode:"", imageUrl:"", priceHistory:[] });
+  const [form, setForm] = useState(initial||{ name:"", format:"Unidad", unitsPerPackage:"", category:cats[0], salePrice:"", purchasePrice:"", stock:"", barcode:"", imageUrl:"", priceHistory:[], fechaVencimiento:"" });
   const isEdit = !!initial;
   return (
     <Modal title={isEdit?"Editar producto":"Ingresar producto"} onClose={onClose} width={860}>
@@ -1215,10 +1332,11 @@ function ProductFormModal({ initial, categories, onClose, onSave }) {
           <div />
         )}
         <Field label="Categoría"><select style={inputStyle} value={form.category} onChange={e=>setForm({...form,category:e.target.value})}>{cats.map(c=><option key={c}>{c}</option>)}</select></Field>
-        <Field label="Precio de venta"><input type="number" style={inputStyle} value={form.salePrice} onChange={e=>setForm({...form,salePrice:e.target.value})} placeholder="0"/></Field>
-        <Field label="Precio de compra"><input type="number" style={inputStyle} value={form.purchasePrice} onChange={e=>setForm({...form,purchasePrice:e.target.value})} placeholder="0"/></Field>
+        <Field label="Precio de venta"><MoneyInput value={form.salePrice} onChange={v=>setForm({...form,salePrice:v})} placeholder="0"/></Field>
+        <Field label="Precio de compra"><MoneyInput value={form.purchasePrice} onChange={v=>setForm({...form,purchasePrice:v})} placeholder="0"/></Field>
         <Field label="Stock"><input type="number" style={inputStyle} value={form.stock} onChange={e=>setForm({...form,stock:e.target.value})} placeholder="0"/></Field>
         <Field label="Código de barra"><input style={inputStyle} value={form.barcode||""} onChange={e=>setForm({...form,barcode:e.target.value})} placeholder="Ej: 7802800019107"/></Field>
+        <Field label="Fecha de vencimiento (opcional)"><input type="date" style={inputStyle} value={form.fechaVencimiento||""} onChange={e=>setForm({...form,fechaVencimiento:e.target.value})} /></Field>
         <div className="col-span-2">
           <Field label="Foto del producto">
             <div className="flex items-center gap-3">
@@ -1229,9 +1347,7 @@ function ProductFormModal({ initial, categories, onClose, onSave }) {
                 <input type="file" accept="image/*" className="hidden" onChange={e=>{
                   const file = e.target.files?.[0];
                   if (!file) return;
-                  const reader = new FileReader();
-                  reader.onload = ev => setForm(f=>({...f, imageUrl: ev.target.result}));
-                  reader.readAsDataURL(file);
+                  comprimirImagen(file).then(dataUrl => setForm(f=>({...f, imageUrl: dataUrl})));
                 }} />
               </label>
               {form.imageUrl && <img src={form.imageUrl} alt="preview" className="rounded-xl object-cover shrink-0" style={{width:44,height:44}} onError={e=>e.target.style.display="none"}/>}
@@ -1338,12 +1454,21 @@ function InventarioView({ products, setProducts, showToast, profile, gastos, set
               <tbody>
                 {filtered.map(p=>{
                   const cs=styleForCategory(p.category);
+                  const diasVence = p.fechaVencimiento ? Math.ceil((new Date(p.fechaVencimiento+"T00:00:00")-new Date(todayISO()+"T00:00:00"))/86400000) : null;
                   return (
                     <tr key={p.id} style={{borderTop:`1px solid ${C.border}`}}>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-3">
                           {p.imageUrl ? <img src={p.imageUrl} alt={p.name} className="w-9 h-9 rounded-lg object-cover" onError={e=>{e.target.style.display="none";}} /> : <div className="w-9 h-9 rounded-lg flex items-center justify-center text-base" style={{background:cs.bg}}>{cs.emoji}</div>}
-                          <span className="font-medium" style={{color:C.text}}>{p.name}</span>
+                          <div>
+                            <span className="font-medium block" style={{color:C.text}}>{p.name}</span>
+                            {diasVence!==null && (
+                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md inline-block mt-0.5" style={{
+                                background: diasVence<0?C.dangerLight:diasVence<=7?C.dangerLight:diasVence<=30?C.amberLight:C.successLight,
+                                color: diasVence<0?C.danger:diasVence<=7?C.danger:diasVence<=30?C.amber:C.success,
+                              }}>{diasVence<0?`Vencido hace ${-diasVence}d`:diasVence===0?"Vence hoy":`Vence en ${diasVence}d`}</span>
+                            )}
+                          </div>
                         </div>
                       </td>
                       <td className="px-4 py-3" style={{color:C.textMuted}}>{p.format}{p.unitsPerPackage ? ` (x${p.unitsPerPackage})` : ""}</td>
@@ -1539,7 +1664,7 @@ function RestockModal({ products, onClose, onConfirm }) {
         </Field>
         <div className="grid grid-cols-2 gap-4">
           <Field label="Cantidad que compraste"><input type="number" min="1" style={inputStyle} value={qty} onChange={e=>setQty(e.target.value)} placeholder="0" /></Field>
-          <Field label="Costo por unidad"><input type="number" min="0" style={inputStyle} value={unitCost} onChange={e=>setUnitCost(e.target.value)} placeholder="0" /></Field>
+          <Field label="Costo por unidad"><MoneyInput value={unitCost} onChange={setUnitCost} placeholder="0" /></Field>
         </div>
         <Field label="Proveedor (opcional)"><input style={inputStyle} value={proveedor} onChange={e=>setProveedor(e.target.value)} placeholder="Nombre del proveedor" /></Field>
         <div className="rounded-xl px-4 py-3 flex justify-between items-center" style={{background:C.cream}}>
@@ -1644,7 +1769,7 @@ function CheckoutModal({ total, cartItems, fiados, onClose, onFinalize }) {
 
   const change   = method==="efectivo"?received-total:0;
   const mixOk    = mixCash+mixCard===total;
-  const fMatches = fiados.filter(f=>f.name.toLowerCase().includes(fQuery.toLowerCase())||f.rut.includes(fQuery));
+  const fMatches = fiados.filter(f=>(f.name||"").toLowerCase().includes(fQuery.toLowerCase())||(f.rut||"").includes(fQuery));
 
   function canFinalize() {
     if (!method) return false;
@@ -1672,7 +1797,7 @@ function CheckoutModal({ total, cartItems, fiados, onClose, onFinalize }) {
       </div>
       {method==="efectivo"&&(
         <div className="mb-5">
-          <Field label="Monto recibido"><input type="number" style={inputStyle} value={received} onChange={e=>setReceived(Number(e.target.value))}/></Field>
+          <Field label="Monto recibido"><MoneyInput value={received} onChange={v=>setReceived(v===""?0:v)}/></Field>
           <div className="flex justify-between mt-2 text-sm font-semibold">
             <span style={{color:C.textMuted}}>Vuelto</span>
             <span style={{color:change<0?C.danger:C.success,fontFamily:FONT_MONO}}>{change<0?"Falta "+formatCLP(-change):formatCLP(change)}</span>
@@ -1681,8 +1806,8 @@ function CheckoutModal({ total, cartItems, fiados, onClose, onFinalize }) {
       )}
       {method==="mixto"&&(
         <div className="mb-5 grid grid-cols-2 gap-3">
-          <Field label="Efectivo"><input type="number" style={inputStyle} value={mixCash} onChange={e=>setMixCash(Number(e.target.value))}/></Field>
-          <Field label="Tarjeta"><input type="number" style={inputStyle} value={mixCard} onChange={e=>setMixCard(Number(e.target.value))}/></Field>
+          <Field label="Efectivo"><MoneyInput value={mixCash} onChange={v=>setMixCash(v===""?0:v)}/></Field>
+          <Field label="Tarjeta"><MoneyInput value={mixCard} onChange={v=>setMixCard(v===""?0:v)}/></Field>
           {!mixOk&&<p className="col-span-2 text-xs" style={{color:C.danger}}>La suma debe ser {formatCLP(total)}</p>}
         </div>
       )}
@@ -1732,7 +1857,7 @@ function ReceiptModal({ sale, profile, onClose }) {
           <div className="flex justify-between"><span>Boleta SII</span><span>{sale.boletaSII}</span></div>
           <div className="flex justify-between"><span>Fecha</span><span>{formatDateTime(sale.datetime)}</span></div>
         </div>
-        <div className="text-[12px] mb-3">{sale.items.map((it,i)=><div key={i} className="flex justify-between mb-1"><span>{it.qty}x {it.name}</span><span>{formatCLP(it.price*it.qty)}</span></div>)}</div>
+        <div className="text-[12px] mb-3">{(sale.items||[]).map((it,i)=><div key={i} className="flex justify-between mb-1"><span>{it.qty}x {it.name}</span><span>{formatCLP(it.price*it.qty)}</span></div>)}</div>
         <div className="flex justify-between font-bold text-sm pt-2" style={{borderTop:`1px dashed ${C.border}`}}><span>TOTAL</span><span>{formatCLP(sale.total)}</span></div>
         <div className="text-[11px] mt-1" style={{color:C.textMuted}}>Pago: {PAYMENT_LABEL[sale.paymentType]}</div>
         <div className="text-center text-[11px] mt-4" style={{color:C.textMuted}}>¡Gracias por su compra! 🌸</div>
@@ -1889,7 +2014,7 @@ function FiadoDetailModal({ client, onClose, onAbono }) {
       </div>
       {client.balance>0&&(
         <div className="flex gap-2 mb-5">
-          <input type="number" style={inputStyle} placeholder="Monto del abono" value={amount} onChange={e=>setAmount(e.target.value)}/>
+          <MoneyInput value={amount} onChange={setAmount} placeholder="Monto del abono"/>
           <Btn variant="teal" onClick={()=>{ if(Number(amount)>0){onAbono(Number(amount));setAmount(""); }}}>Registrar abono</Btn>
         </div>
       )}
@@ -1997,9 +2122,7 @@ function PedidoFormModal({ initial, products, onClose, onSave }) {
                       <input type="file" accept="image/*" className="hidden" onChange={e=>{
                         const file = e.target.files?.[0];
                         if (!file) return;
-                        const reader = new FileReader();
-                        reader.onload = ev => setForm(f=>({...f, foto: ev.target.result}));
-                        reader.readAsDataURL(file);
+                        comprimirImagen(file).then(dataUrl => setForm(f=>({...f, foto: dataUrl})));
                       }} />
                     </label>
                     {form.foto && <img src={form.foto} alt="preview" className="rounded-xl object-cover shrink-0" style={{width:44,height:44}} onError={e=>e.target.style.display="none"}/>}
@@ -2014,9 +2137,9 @@ function PedidoFormModal({ initial, products, onClose, onSave }) {
         <Field label="Teléfono (opcional)"><input style={inputStyle} value={form.telefono} onChange={e=>setForm({...form,telefono:e.target.value})} placeholder="+56 9..." /></Field>
         <Field label="Cantidad"><input type="number" min="1" style={inputStyle} value={form.cantidad} onChange={e=>cambiarCantidad(e.target.value)} /></Field>
         <Field label="Fecha de entrega"><input type="date" style={inputStyle} value={form.fechaEntrega} onChange={e=>setForm({...form,fechaEntrega:e.target.value})} /></Field>
-        <Field label="Precio total"><input type="number" min="0" style={inputStyle} value={form.precio} onChange={e=>setForm({...form,precio:e.target.value})} placeholder="0" /></Field>
-        {form.tipo==="nuevo" && <Field label="Costo estimado (opcional)"><input type="number" min="0" style={inputStyle} value={form.costo||""} onChange={e=>setForm({...form,costo:e.target.value})} placeholder="Ej: ingredientes, materiales" /></Field>}
-        <Field label="Seña / anticipo (opcional)"><input type="number" min="0" style={inputStyle} value={form.seña} onChange={e=>setForm({...form,seña:e.target.value})} placeholder="0" /></Field>
+        <Field label="Precio total"><MoneyInput value={form.precio} onChange={v=>setForm({...form,precio:v})} placeholder="0" /></Field>
+        {form.tipo==="nuevo" && <Field label="Costo estimado (opcional)"><MoneyInput value={form.costo||""} onChange={v=>setForm({...form,costo:v})} placeholder="Ej: ingredientes, materiales" /></Field>}
+        <Field label="Seña / anticipo (opcional)"><MoneyInput value={form.seña} onChange={v=>setForm({...form,seña:v})} placeholder="0" /></Field>
         <div className="col-span-2"><Field label="Estado">
           <select style={inputStyle} value={form.estado} onChange={e=>setForm({...form,estado:e.target.value})}>
             {PEDIDO_ESTADOS.map(e=><option key={e.id} value={e.id}>{e.label}</option>)}
@@ -2376,11 +2499,11 @@ function ServicioFormModal({ initial, categorias, onClose, onSave }) {
         <Field label="Categoría"><select style={inputStyle} value={form.categoria} onChange={e => setForm({ ...form, categoria: e.target.value })}>{categorias.map(c => <option key={c}>{c}</option>)}</select></Field>
         <div className="grid grid-cols-2 gap-4">
           <Field label="Duración (minutos)"><input type="number" min="5" step="5" style={inputStyle} value={form.duracionMin} onChange={e => setForm({ ...form, duracionMin: e.target.value })} /></Field>
-          <Field label="Precio de venta"><input type="number" min="0" style={inputStyle} value={form.precio} onChange={e => setForm({ ...form, precio: e.target.value })} placeholder="0" /></Field>
+          <Field label="Precio de venta"><MoneyInput value={form.precio} onChange={v => setForm({ ...form, precio: v })} placeholder="0" /></Field>
         </div>
         <Field label="Descripción (opcional)"><input style={inputStyle} value={form.descripcion} onChange={e => setForm({ ...form, descripcion: e.target.value })} placeholder="Qué incluye este servicio" /></Field>
         <Field label="Costo estimado (opcional)">
-          <input type="number" min="0" style={inputStyle} value={form.costoEstimado} onChange={e => setForm({ ...form, costoEstimado: e.target.value })} placeholder="Insumos o materiales que usas" />
+          <MoneyInput value={form.costoEstimado} onChange={v => setForm({ ...form, costoEstimado: v })} placeholder="Insumos o materiales que usas" />
         </Field>
         {form.precio!=="" && form.costoEstimado!=="" && (()=>{
           const precio = Number(form.precio)||0, costo = Number(form.costoEstimado)||0;
@@ -2409,9 +2532,7 @@ function ServicioFormModal({ initial, categorias, onClose, onSave }) {
               <input type="file" accept="image/*" className="hidden" onChange={e=>{
                 const file = e.target.files?.[0];
                 if (!file) return;
-                const reader = new FileReader();
-                reader.onload = ev => setForm(f=>({...f, foto: ev.target.result}));
-                reader.readAsDataURL(file);
+                comprimirImagen(file).then(dataUrl => setForm(f=>({...f, foto: dataUrl})));
               }} />
             </label>
             {form.foto && <img src={form.foto} alt="preview" className="rounded-xl object-cover shrink-0" style={{width:44,height:44}} onError={e=>e.target.style.display="none"}/>}
@@ -2633,7 +2754,7 @@ function FiadosView({ fiados, setFiados, showToast }) {
   const [sel,  setSel]  = useState(null);
   const totalP = fiados.reduce((s,f)=>s+f.balance,0);
   const base   = tab==="pendientes"?fiados.filter(f=>f.balance>0):fiados;
-  const filtered=base.filter(f=>f.name.toLowerCase().includes(search.toLowerCase())||f.rut.includes(search));
+  const filtered=base.filter(f=>(f.name||"").toLowerCase().includes(search.toLowerCase())||(f.rut||"").includes(search));
 
   function abono(amount) {
     setFiados(fiados.map(f=>f.id===sel.id?{...f,balance:Math.max(0,f.balance-amount),history:[{date:todayISO(),type:"abono",amount,note:"Abono registrado"},...f.history]}:f));
@@ -2686,7 +2807,7 @@ function SaleDetailModal({ sale, onClose }) {
         <div><div className="text-xs" style={{color:C.textMuted}}>Vendedor</div><div>{sale.vendor}</div></div>
         <div><div className="text-xs" style={{color:C.textMuted}}>Pago</div><div>{PAYMENT_LABEL[sale.paymentType]}</div></div>
       </div>
-      <div className="flex flex-col gap-2 mb-3">{sale.items.map((it,i)=><div key={i} className="flex justify-between text-sm px-3 py-2 rounded-lg" style={{background:C.cream}}><span>{it.qty}x {it.name}</span><span style={{fontFamily:FONT_MONO}}>{formatCLP(it.price*it.qty)}</span></div>)}</div>
+      <div className="flex flex-col gap-2 mb-3">{(sale.items||[]).map((it,i)=><div key={i} className="flex justify-between text-sm px-3 py-2 rounded-lg" style={{background:C.cream}}><span>{it.qty}x {it.name}</span><span style={{fontFamily:FONT_MONO}}>{formatCLP(it.price*it.qty)}</span></div>)}</div>
       <div className="flex justify-between font-bold pt-3 text-sm" style={{borderTop:`1px solid ${C.border}`}}><span>Total</span><span style={{fontFamily:FONT_MONO}}>{formatCLP(sale.total)}</span></div>
     </Modal>
   );
@@ -2702,7 +2823,7 @@ function DetalleBoletaView({ sales, setSales, setProducts, products, showToast }
   function procesarDevolucion(sale) {
     // Reverse stock
     setProducts(products.map(p=>{
-      const item = sale.items.find(it=>it.productId===p.id);
+      const item = (sale.items||[]).find(it=>it.productId===p.id);
       return item ? {...p, stock: p.stock+item.qty} : p;
     }));
     // Mark sale as devuelta
@@ -2778,7 +2899,7 @@ function ReporteView({ sales, products }) {
   const total=filtered.reduce((s,x)=>s+x.total,0);
   const avg=filtered.length?total/filtered.length:0;
   const chart=useMemo(()=>{ const m={}; filtered.forEach(s=>{const d=s.datetime.slice(0,10);m[d]=(m[d]||0)+s.total;}); return Object.keys(m).sort().map(d=>({date:d.slice(5),total:m[d]})); },[filtered]);
-  const top=useMemo(()=>{ const m={}; filtered.forEach(s=>s.items.forEach(it=>{m[it.name]=(m[it.name]||0)+it.qty;})); return Object.entries(m).sort((a,b)=>b[1]-a[1]).slice(0,5); },[filtered]);
+  const top=useMemo(()=>{ const m={}; filtered.forEach(s=>(s.items||[]).forEach(it=>{m[it.name]=(m[it.name]||0)+it.qty;})); return Object.entries(m).sort((a,b)=>b[1]-a[1]).slice(0,5); },[filtered]);
   const maxQ=top[0]?.[1]||1;
 
   return (
@@ -2920,7 +3041,7 @@ function CajaView({ sales, cajaState, setCajaState, showToast, currentUser }) {
             <thead><tr style={{background:C.cream}}>{["Vendedora","Apertura","Cierre","Ventas del turno","Cuadratura"].map(h=><th key={h} className="text-left px-4 py-3 font-semibold text-xs" style={{color:C.textMuted}}>{h}</th>)}</tr></thead>
             <tbody>{turnosFiltrados.map(t=>(
               <tr key={t.id} style={{borderTop:`1px solid ${C.border}`}}>
-                <td className="px-4 py-3 flex items-center gap-2"><div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white" style={{background:C.orange}}>{t.vendor.split(" ").map(w=>w[0]).join("").slice(0,2)}</div>{t.vendor}</td>
+                <td className="px-4 py-3 flex items-center gap-2"><div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white" style={{background:C.orange}}>{(t.vendor||"?").split(" ").map(w=>w[0]).join("").slice(0,2)}</div>{t.vendor}</td>
                 <td className="px-4 py-3 text-xs" style={{color:C.textMuted}}>{formatDateTime(t.apertura)}</td>
                 <td className="px-4 py-3 text-xs" style={{color:C.textMuted}}>{t.cierre?formatDateTime(t.cierre):<span style={{color:C.success}}>En turno</span>}</td>
                 <td className="px-4 py-3 font-semibold" style={{fontFamily:FONT_MONO}}>{formatCLP(t.ventasTurno)}</td>
@@ -3043,7 +3164,7 @@ function ConfigurarView({ profile, setProfile, showToast, users, currentUser, on
                 <div key={u.id} className="flex items-center justify-between p-3 rounded-xl mb-2 flex-wrap gap-2" style={{background:C.cream}}>
                   <div className="flex items-center gap-3">
                     <div className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-white" style={{background:u.role==="admin"?C.orange:C.teal}}>{u.name.split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase()}</div>
-                    <div><div className="text-sm font-semibold" style={{color:C.text}}>{u.name}</div><div className="text-xs" style={{color:C.textMuted}}>{u.pin ? `PIN: ${"•".repeat(u.pin.length)}` : "Sin PIN configurado"} · {u.role==="admin"?"Administrador":"Vendedor"}</div></div>
+                    <div><div className="text-sm font-semibold" style={{color:C.text}}>{u.name}</div><div className="text-xs" style={{color:C.textMuted}}>{u.pin ? "PIN: ••••" : "Sin PIN configurado"} · {u.role==="admin"?"Administrador":"Vendedor"}</div></div>
                   </div>
                   {u.id===currentUser.id && editingPin ? (
                     <div className="flex items-center gap-2">
@@ -3123,9 +3244,7 @@ function ConfigurarView({ profile, setProfile, showToast, users, currentUser, on
                     <input type="file" accept="image/*" className="hidden" onChange={e=>{
                       const file = e.target.files?.[0];
                       if (!file) return;
-                      const reader = new FileReader();
-                      reader.onload = ev => setForm(f=>({...f, logoUrl: ev.target.result}));
-                      reader.readAsDataURL(file);
+                      comprimirImagen(file, 400).then(dataUrl => setForm(f=>({...f, logoUrl: dataUrl})));
                     }} />
                   </label>
                   {form.logoUrl && <button type="button" onClick={()=>setForm(f=>({...f,logoUrl:""}))} className="text-xs font-semibold text-left" style={{color:C.danger}}>Quitar logo</button>}
@@ -3415,7 +3534,7 @@ function ContabilidadView({ sales, products, gastos, setGastos, proveedores, set
     // ===================== HOJA 2: VENTAS =====================
     const ventasData = [
       ["Voucher", "Boleta SII", "Fecha", "Vendedor", "Medio de Pago", "N° Items", "Total"],
-      ...sales.map(s => [s.voucher, s.boletaSII, formatDateTime(s.datetime), s.vendor, PAYMENT_LABEL[s.paymentType] || s.paymentType, s.items.length, s.total]),
+      ...sales.map(s => [s.voucher, s.boletaSII, formatDateTime(s.datetime), s.vendor, PAYMENT_LABEL[s.paymentType] || s.paymentType, (s.items||[]).length, s.total]),
       ["", "", "", "", "", "TOTAL", sales.reduce((a,s)=>a+s.total,0)],
     ];
     const ws2 = XLSX.utils.aoa_to_sheet(ventasData);
@@ -3619,7 +3738,7 @@ function ContabilidadView({ sales, products, gastos, setGastos, proveedores, set
                   </div>
                 )}
                 <div className="col-span-2"><Field label="Descripción"><input style={inputStyle} value={gasto.descripcion} onChange={e => setGasto({ ...gasto, descripcion: e.target.value })} placeholder="Ej: Factura arriendo enero" /></Field></div>
-                <Field label="Monto ($)"><input type="number" style={inputStyle} value={gasto.monto} onChange={e => setGasto({ ...gasto, monto: e.target.value })} placeholder="0" /></Field>
+                <Field label="Monto ($)"><MoneyInput value={gasto.monto} onChange={v => setGasto({ ...gasto, monto: v })} placeholder="0" /></Field>
                 <Field label="Proveedor (opcional)"><input style={inputStyle} value={gasto.proveedor} onChange={e => setGasto({ ...gasto, proveedor: e.target.value })} placeholder="Nombre del proveedor" /></Field>
                 <div className="col-span-2">
                   <Field label="Factura o comprobante (opcional)">
@@ -3630,9 +3749,13 @@ function ContabilidadView({ sales, products, gastos, setGastos, proveedores, set
                         <input type="file" accept="image/*,application/pdf" className="hidden" onChange={e => {
                           const file = e.target.files?.[0];
                           if (!file) return;
-                          const reader = new FileReader();
-                          reader.onload = ev => setGasto(g => ({ ...g, facturaUrl: ev.target.result, facturaNombre: file.name }));
-                          reader.readAsDataURL(file);
+                          if (file.type.startsWith("image/")) {
+                            comprimirImagen(file).then(dataUrl => setGasto(g => ({ ...g, facturaUrl: dataUrl, facturaNombre: file.name })));
+                          } else {
+                            const reader = new FileReader();
+                            reader.onload = ev => setGasto(g => ({ ...g, facturaUrl: ev.target.result, facturaNombre: file.name }));
+                            reader.readAsDataURL(file);
+                          }
                         }} />
                       </label>
                       {gasto.facturaUrl && <span className="text-xs font-medium" style={{ color: C.success }}>✓ {gasto.facturaNombre || "Archivo adjunto"}</span>}
@@ -4002,7 +4125,7 @@ function OnboardingWizard({ onComplete, profile, setProfile, setProducts }) {
                   </Field>
                 </div>
                 <Field label="Precio de venta ($)">
-                  <input type="number" style={inputStyle} value={prod.salePrice} onChange={e => setProd({ ...prod, salePrice: e.target.value })} placeholder="0" />
+                  <MoneyInput value={prod.salePrice} onChange={v => setProd({ ...prod, salePrice: v })} placeholder="0" />
                 </Field>
                 <Field label="Stock inicial">
                   <input type="number" style={inputStyle} value={prod.stock} onChange={e => setProd({ ...prod, stock: e.target.value })} placeholder="0" />
@@ -4013,7 +4136,7 @@ function OnboardingWizard({ onComplete, profile, setProfile, setProducts }) {
                   </select>
                 </Field>
                 <Field label="Precio de compra ($)">
-                  <input type="number" style={inputStyle} value={prod.purchasePrice} onChange={e => setProd({ ...prod, purchasePrice: e.target.value })} placeholder="0" />
+                  <MoneyInput value={prod.purchasePrice} onChange={v => setProd({ ...prod, purchasePrice: v })} placeholder="0" />
                 </Field>
               </div>
               <div className="flex justify-between mt-6">
@@ -4077,6 +4200,8 @@ export default function App({ session, onLogout, isOwner, onOpenAdmin }) {
   const [pedidos, setPedidos] = useState([]);
   const [servicios, setServicios] = useState([]);
   const [citas, setCitas] = useState([]);
+  const [seguridadLog, setSeguridadLog] = useState([]);
+  const [avisosVistos, setAvisosVistos] = useState([]);
   const [counters,    setCounters]    = useState({ voucher: 1000, boleta: 8800 });
   const [cajaState,   setCajaState]   = useState({ isOpen: false, openedAt: new Date().toISOString(), openingAmount: 0, turnos: [] });
   const [profile,     setProfile]     = useState({ name: "Mi Minimarket", rut: "", address: "", comuna: "", region: "", size: "50 a 100 metros cuadrados", type: "minimarket", modules: ["inventario"], categories: [], meta: null, onboardingCompleted: false, logoUrl: "", serviceCategories: [], vendorPerms: DEFAULT_VENDOR_PERMS });
@@ -4090,6 +4215,9 @@ export default function App({ session, onLogout, isOwner, onOpenAdmin }) {
   function firstAllowedView(role) {
     const item = NAV_ITEMS.find(n => n.roles.includes(role) && canAccess(n.permKey, role) && (!n.module || profile?.modules?.includes(n.module)));
     return item?.id || "venta";
+  }
+  function registrarIntentoBloqueado(usuarioIntentado) {
+    setSeguridadLog(log => [{ id: uid("sec"), fecha: new Date().toISOString(), nombre: usuarioIntentado.name }, ...log].slice(0, 50));
   }
   const [switchingUser, setSwitchingUser] = useState(false);
 
@@ -4116,6 +4244,8 @@ export default function App({ session, onLogout, isOwner, onOpenAdmin }) {
         if (data.pedidos)     setPedidos(data.pedidos);
         if (data.servicios)   setServicios(data.servicios);
         if (data.citas)       setCitas(data.citas);
+        if (data.seguridad_log) setSeguridadLog(data.seguridad_log);
+        if (data.avisos_vistos) setAvisosVistos(data.avisos_vistos);
         if (data.counters)    setCounters(data.counters);
         if (data.caja_state)  setCajaState(data.caja_state);
         if (data.users && data.users.length) setUsers(data.users);
@@ -4133,14 +4263,14 @@ export default function App({ session, onLogout, isOwner, onOpenAdmin }) {
         email: session.user.email,
         name: profile.name, rut: profile.rut, address: profile.address, comuna: profile.comuna,
         region: profile.region, size: profile.size, type: profile.type, modules: profile.modules, categories: profile.categories || [], meta: profile.meta || null, onboarding_completed: profile.onboardingCompleted || false, logo_url: profile.logoUrl || "", service_categories: profile.serviceCategories || [], vendor_perms: profile.vendorPerms || DEFAULT_VENDOR_PERMS,
-        products, sales, fiados, gastos, proveedores, counters, caja_state: cajaState, users, pedidos, servicios, citas,
+        products, sales, fiados, gastos, proveedores, counters, caja_state: cajaState, users, pedidos, servicios, citas, seguridad_log: seguridadLog, avisos_vistos: avisosVistos,
         updated_at: new Date().toISOString(),
       }, { onConflict: "user_id" }).then(({ error }) => {
         if (error) { console.error("Error guardando datos del negocio:", error); showToast("No se pudo guardar — revisa tu conexión, reintentaremos", "error"); }
       });
     }, 700);
     return () => clearTimeout(t);
-  }, [profile, products, sales, fiados, gastos, proveedores, counters, cajaState, users, pedidos, servicios, citas, profileLoaded, session?.user?.id]);
+  }, [profile, products, sales, fiados, gastos, proveedores, counters, cajaState, users, pedidos, servicios, citas, seguridadLog, avisosVistos, profileLoaded, session?.user?.id]);
 
   const [toast,       setToast]       = useState(null);
   const [onboarding,  setOnboarding]  = useState(false);
@@ -4159,9 +4289,9 @@ export default function App({ session, onLogout, isOwner, onOpenAdmin }) {
     if (onLogout) onLogout();
     else { setCurrentUser(null); setView("panel"); setCart([]); }
   }
-  function addUser(u) { setUsers([...users, { id: uid("u"), ...u }]); showToast("Usuario creado"); }
+  async function addUser(u) { const hashedPin = await hashPin(u.pin); setUsers([...users, { id: uid("u"), ...u, pin: hashedPin }]); showToast("Usuario creado"); }
   function deleteUser(id) { setUsers(users.filter(u => u.id !== id)); showToast("Usuario eliminado"); }
-  function updateUser(id, changes) { setUsers(users.map(u => u.id === id ? { ...u, ...changes } : u)); showToast("PIN actualizado"); }
+  async function updateUser(id, changes) { const finalChanges = changes.pin ? { ...changes, pin: await hashPin(changes.pin) } : changes; setUsers(users.map(u => u.id === id ? { ...u, ...finalChanges } : u)); showToast("PIN actualizado"); }
 
   const viewProps = { products, setProducts, cart, setCart, sales, setSales, fiados, setFiados, profile, setProfile, counters, setCounters, cajaState, setCajaState, showToast, setView };
 
@@ -4202,7 +4332,7 @@ export default function App({ session, onLogout, isOwner, onOpenAdmin }) {
       return (
         <div style={{ fontFamily: FONT_BODY }}>
           <style>{STYLES}</style>
-          <LoginScreen users={users} onLogin={u => {
+          <LoginScreen users={users} onIntentoBloqueado={registrarIntentoBloqueado} onLogin={u => {
             setCurrentUser(u);
             setView(firstAllowedView(u.role));
           }} />
@@ -4235,7 +4365,7 @@ export default function App({ session, onLogout, isOwner, onOpenAdmin }) {
     </div>
   );
 
-  const navProps = { view, setView, currentUser, onLogout: handleLogout, onSwitchUser: ()=>setSwitchingUser(true), profile, cajaState, products, fiados, sales, isOwner, onOpenAdmin };
+  const navProps = { view, setView, currentUser, onLogout: handleLogout, onSwitchUser: ()=>setSwitchingUser(true), profile, cajaState, products, fiados, sales, pedidos, citas, seguridadLog, avisosVistos, setAvisosVistos, isOwner, onOpenAdmin };
 
   return (
     <div style={{ fontFamily: FONT_BODY, background: C.cream, minHeight: "100vh" }}>
@@ -4264,7 +4394,7 @@ export default function App({ session, onLogout, isOwner, onOpenAdmin }) {
       <Toast toast={toast} />
       {switchingUser && (
         <div style={{ position:"fixed", inset:0, zIndex:100, background:"#F8FAFC", overflowY:"auto" }}>
-          <LoginScreen users={users} onCancel={()=>setSwitchingUser(false)} onLogin={u=>{
+          <LoginScreen users={users} onCancel={()=>setSwitchingUser(false)} onIntentoBloqueado={registrarIntentoBloqueado} onLogin={u=>{
             setCurrentUser(u);
             setSwitchingUser(false);
             setView(firstAllowedView(u.role));
