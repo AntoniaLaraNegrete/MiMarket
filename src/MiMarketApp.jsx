@@ -251,6 +251,8 @@ const SEED_PRODUCTS = [
   { name: "Plátano (kg)",             format: "Unidad",   salePrice: 1290, purchasePrice: 800,  stock: 13, category: "Frutas y Verduras", barcode: "" },
 ].map((p, i) => ({ id: "p" + (i + 1), ...p }));
 
+const IVA_RATE = 0.19; // IVA Chile — los precios de boleta ya lo incluyen
+
 const PAYMENT_METHODS = [
   { id: "efectivo",      label: "Efectivo",      icon: Banknote,      color: "#059669" },
   { id: "debito",        label: "Débito",         icon: CreditCard,    color: "#2563EB" },
@@ -300,6 +302,39 @@ function uid(p) { return p + Math.random().toString(36).slice(2, 9); }
 
 // Comprime cualquier foto subida (producto, pedido, servicio, logo) antes de
 // guardarla, para que la base de datos nunca se llene de fotos pesadas.
+// Abre una ventana nueva con el comprobante ya formateado y manda la orden
+// real de impresión — no solo lo muestra en pantalla.
+function imprimirComprobante(sale, profile) {
+  const w = window.open("", "_blank", "width=380,height=600");
+  if (!w) { alert("Tu navegador bloqueó la ventana de impresión. Revisa el bloqueador de pop-ups."); return; }
+  const items = (sale.items||[]).map(it=>`<div class="row"><span>${it.qty}x ${it.name}</span><span>${formatCLP(it.price*it.qty)}</span></div>`).join("");
+  w.document.write(`
+    <html><head><title>Comprobante ${sale.voucher}</title>
+    <style>
+      body{font-family:monospace;font-size:12px;width:280px;margin:12px auto;color:#111;}
+      .center{text-align:center;} .bold{font-weight:bold;}
+      .row{display:flex;justify-content:space-between;margin-bottom:4px;}
+      .divider{border-top:1px dashed #999;margin:8px 0;padding-top:6px;}
+      .muted{color:#666;font-size:11px;}
+    </style></head>
+    <body>
+      <div class="center bold">${profile?.name||"MiMarket"}</div>
+      <div class="center muted">${profile?.rut||""} ${profile?.address?" · "+profile.address:""}</div>
+      <div class="divider muted">
+        <div class="row"><span>Voucher</span><span>${sale.voucher}</span></div>
+        <div class="row"><span>Boleta</span><span>${sale.boletaSII}</span></div>
+        <div class="row"><span>Fecha</span><span>${formatDateTime(sale.datetime)}</span></div>
+      </div>
+      <div class="divider">${items}</div>
+      <div class="divider row bold"><span>TOTAL</span><span>${formatCLP(sale.total)}</span></div>
+      <div class="muted">Pago: ${PAYMENT_LABEL[sale.paymentType]||sale.paymentType}</div>
+      <div class="center muted" style="margin-top:16px;">¡Gracias por su compra! 🌸</div>
+    </body></html>
+  `);
+  w.document.close();
+  w.onload = () => { w.focus(); w.print(); };
+}
+
 function comprimirImagen(file, maxAncho = 800, calidad = 0.75) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -610,7 +645,10 @@ function LoginScreen({ users, onLogin, onCancel, onIntentoBloqueado }) {
     if (next.length === 4) {
       setTimeout(async () => {
         const hashed = await hashPin(next);
-        if (hashed === sel.pin) { setFails(0); onLogin(sel); }
+        // Acepta tanto PIN ya encriptados (formato nuevo) como los creados
+        // antes de ese cambio (seguían en texto plano) — así nadie queda
+        // bloqueado por un PIN que ya tenía puesto de antes.
+        if (hashed === sel.pin || next === sel.pin) { setFails(0); onLogin(sel); }
         else {
           const nuevosFallos = fails + 1;
           setFails(nuevosFallos);
@@ -1534,11 +1572,11 @@ function InventarioView({ products, setProducts, showToast, profile, gastos, set
         </Modal>
       )}
       {showRestock && (
-        <RestockModal products={products} onClose={()=>setShowRestock(false)} onConfirm={({productId, qty, unitCost, proveedor})=>{
+        <RestockModal products={products} onClose={()=>setShowRestock(false)} onConfirm={({productId, qty, unitCost, proveedor, metodoPago})=>{
           const prod = products.find(p=>p.id===productId);
           if (!prod) return;
           setProducts(products.map(p=>p.id===productId ? {...p, stock:p.stock+qty, purchasePrice:unitCost} : p));
-          setGastos([{ id: uid("g"), fecha: todayISO(), categoria: "Mercadería", descripcion: `Reposición: ${qty} x ${prod.name}`, monto: qty*unitCost, proveedor: proveedor||"" }, ...gastos]);
+          setGastos([{ id: uid("g"), fecha: todayISO(), categoria: "Mercadería", descripcion: `Reposición: ${qty} x ${prod.name}`, monto: qty*unitCost, proveedor: proveedor||"", metodoPago: metodoPago||"" }, ...gastos]);
           setShowRestock(false);
           showToast(`Stock repuesto y gasto registrado (${formatCLP(qty*unitCost)})`);
         }}/>
@@ -1548,8 +1586,10 @@ function InventarioView({ products, setProducts, showToast, profile, gastos, set
 }
 
 function InventarioRentabilidad({ products }) {
+  const [descontarIva, setDescontarIva] = useState(false);
   const enriched = products.map(p => {
-    const profit = (p.salePrice||0) - (p.purchasePrice||0);
+    const ivaUnit = descontarIva ? (p.salePrice||0) * (IVA_RATE/(1+IVA_RATE)) : 0;
+    const profit = (p.salePrice||0) - ivaUnit - (p.purchasePrice||0);
     const marginPct = p.salePrice>0 ? (profit/p.salePrice)*100 : 0;
     const potential = profit * (p.stock||0);
     return { ...p, profit, marginPct, potential };
@@ -1566,6 +1606,15 @@ function InventarioRentabilidad({ products }) {
 
   return (
     <div className="flex flex-col gap-5">
+      <div className="flex items-center justify-between px-4 py-3 rounded-xl" style={{background:C.cream}}>
+        <div>
+          <div className="text-sm font-semibold" style={{color:C.text}}>Descontar IVA (19%) de la ganancia</div>
+          <div className="text-xs" style={{color:C.textMuted}}>Tus precios de venta ya incluyen IVA — actívalo para ver tu ganancia real, sin ese 19% que debes declarar</div>
+        </div>
+        <button onClick={()=>setDescontarIva(v=>!v)} className="shrink-0 w-11 h-6 rounded-full relative transition-colors" style={{background:descontarIva?C.success:"#D1D5DB"}}>
+          <span className="absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all" style={{left:descontarIva?"22px":"2px"}}/>
+        </button>
+      </div>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <Card style={{padding:18}}>
           <div className="text-xs font-semibold mb-1" style={{color:C.textMuted}}>Ganancia potencial total</div>
@@ -1645,6 +1694,7 @@ function RestockModal({ products, onClose, onConfirm }) {
   const selected = products.find(p=>p.id===productId);
   const [unitCost, setUnitCost] = useState(selected?.purchasePrice || "");
   const [proveedor, setProveedor] = useState("");
+  const [metodoPago, setMetodoPago] = useState("");
   const total = (Number(qty)||0) * (Number(unitCost)||0);
 
   function selectProduct(id) {
@@ -1667,6 +1717,18 @@ function RestockModal({ products, onClose, onConfirm }) {
           <Field label="Costo por unidad"><MoneyInput value={unitCost} onChange={setUnitCost} placeholder="0" /></Field>
         </div>
         <Field label="Proveedor (opcional)"><input style={inputStyle} value={proveedor} onChange={e=>setProveedor(e.target.value)} placeholder="Nombre del proveedor" /></Field>
+        <Field label="¿Cómo le pagaste? (opcional)">
+          <div className="flex flex-wrap gap-2">
+            {PAYMENT_METHODS.filter(m=>m.id!=="fiado"&&m.id!=="mixto").map(m=>(
+              <button key={m.id} type="button" onClick={()=>setMetodoPago(metodoPago===m.id?"":m.id)}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold"
+                style={{border:`1.5px solid ${metodoPago===m.id?m.color:C.border}`, background:metodoPago===m.id?m.color+"15":"#fff", color:metodoPago===m.id?m.color:C.text}}>
+                <m.icon size={13}/> {m.label}
+              </button>
+            ))}
+          </div>
+          {metodoPago==="efectivo" && <p className="text-[11px] mt-1.5" style={{color:C.textMuted}}>Se descontará del efectivo esperado en Caja 360° el día de hoy.</p>}
+        </Field>
         <div className="rounded-xl px-4 py-3 flex justify-between items-center" style={{background:C.cream}}>
           <span className="text-xs font-semibold" style={{color:C.textMuted}}>Total del gasto</span>
           <span className="text-lg font-bold" style={{fontFamily:FONT_MONO,color:C.danger}}>{formatCLP(total)}</span>
@@ -1674,7 +1736,7 @@ function RestockModal({ products, onClose, onConfirm }) {
       </div>
       <div className="flex justify-end gap-2 mt-6">
         <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
-        <Btn icon={Check} disabled={!productId||!qty||Number(qty)<=0||!unitCost} onClick={()=>onConfirm({productId, qty:Number(qty), unitCost:Number(unitCost), proveedor})}>Reponer y registrar gasto</Btn>
+        <Btn icon={Check} disabled={!productId||!qty||Number(qty)<=0||!unitCost} onClick={()=>onConfirm({productId, qty:Number(qty), unitCost:Number(unitCost), proveedor, metodoPago})}>Reponer y registrar gasto</Btn>
       </div>
     </Modal>
   );
@@ -1862,7 +1924,10 @@ function ReceiptModal({ sale, profile, onClose }) {
         <div className="text-[11px] mt-1" style={{color:C.textMuted}}>Pago: {PAYMENT_LABEL[sale.paymentType]}</div>
         <div className="text-center text-[11px] mt-4" style={{color:C.textMuted}}>¡Gracias por su compra! 🌸</div>
       </div>
-      <Btn full onClick={onClose} variant="dark" style={{marginTop:12}}>Cerrar</Btn>
+      <div className="flex gap-2" style={{marginTop:12}}>
+        <Btn full variant="ghost" onClick={onClose}>Cerrar</Btn>
+        <Btn full icon={Printer} onClick={()=>imprimirComprobante(sale, profile)}>Imprimir</Btn>
+      </div>
     </Modal>
   );
 }
@@ -2005,6 +2070,8 @@ function VentaView({ products, setProducts, cart, setCart, fiados, setFiados, sa
 /* ============================== FIADOS ============================== */
 function FiadoDetailModal({ client, onClose, onAbono }) {
   const [amount, setAmount] = useState("");
+  const [metodo, setMetodo] = useState("");
+  const metodos = PAYMENT_METHODS.filter(m=>m.id!=="fiado"&&m.id!=="mixto");
   return (
     <Modal title={client.name} onClose={onClose} width={460}>
       <div className="flex justify-between text-sm mb-4">
@@ -2013,16 +2080,25 @@ function FiadoDetailModal({ client, onClose, onAbono }) {
         <div className="text-right"><div className="text-xs" style={{color:C.textMuted}}>Saldo</div><div className="font-bold" style={{color:client.balance>0?C.danger:C.success,fontFamily:FONT_MONO}}>{formatCLP(client.balance)}</div></div>
       </div>
       {client.balance>0&&(
-        <div className="flex gap-2 mb-5">
+        <div className="mb-5">
           <MoneyInput value={amount} onChange={setAmount} placeholder="Monto del abono"/>
-          <Btn variant="teal" onClick={()=>{ if(Number(amount)>0){onAbono(Number(amount));setAmount(""); }}}>Registrar abono</Btn>
+          <div className="text-xs font-semibold mt-3 mb-1.5" style={{color:C.textMuted}}>¿Cómo te pagó?</div>
+          <div className="grid grid-cols-2 gap-2 mb-3">
+            {metodos.map(m=>(
+              <button key={m.id} onClick={()=>setMetodo(m.id)} className="flex items-center gap-2 p-2.5 rounded-xl text-xs font-semibold"
+                style={{border:`1.5px solid ${metodo===m.id?m.color:C.border}`, background:metodo===m.id?m.color+"15":"#fff", color:metodo===m.id?m.color:C.text}}>
+                <m.icon size={14}/> {m.label}
+              </button>
+            ))}
+          </div>
+          <Btn full variant="teal" disabled={!(Number(amount)>0)||!metodo} onClick={()=>{ onAbono(Number(amount), metodo); setAmount(""); setMetodo(""); }}>Registrar abono</Btn>
         </div>
       )}
       <div className="text-xs font-semibold mb-2" style={{color:C.textMuted}}>HISTORIAL</div>
       <div className="flex flex-col gap-2 max-h-60 overflow-y-auto">
-        {client.history.map((h,i)=>(
+        {(client.history||[]).map((h,i)=>(
           <div key={i} className="flex justify-between items-center text-sm px-3 py-2 rounded-lg" style={{background:C.cream}}>
-            <div><div style={{color:C.text}}>{h.note}</div><div className="text-xs" style={{color:C.textMuted}}>{formatDate(h.date)}</div></div>
+            <div><div style={{color:C.text}}>{h.note}{h.metodo?` · ${PAYMENT_LABEL[h.metodo]||h.metodo}`:""}</div><div className="text-xs" style={{color:C.textMuted}}>{formatDate(h.date)}</div></div>
             <span className="font-semibold" style={{fontFamily:FONT_MONO,color:h.type==="cargo"?C.danger:C.success}}>{h.type==="cargo"?"+":"-"}{formatCLP(h.amount)}</span>
           </div>
         ))}
@@ -2756,9 +2832,9 @@ function FiadosView({ fiados, setFiados, showToast }) {
   const base   = tab==="pendientes"?fiados.filter(f=>f.balance>0):fiados;
   const filtered=base.filter(f=>(f.name||"").toLowerCase().includes(search.toLowerCase())||(f.rut||"").includes(search));
 
-  function abono(amount) {
-    setFiados(fiados.map(f=>f.id===sel.id?{...f,balance:Math.max(0,f.balance-amount),history:[{date:todayISO(),type:"abono",amount,note:"Abono registrado"},...f.history]}:f));
-    setSel(s=>({...s,balance:Math.max(0,s.balance-amount),history:[{date:todayISO(),type:"abono",amount,note:"Abono registrado"},...s.history]}));
+  function abono(amount, metodo) {
+    setFiados(fiados.map(f=>f.id===sel.id?{...f,balance:Math.max(0,f.balance-amount),history:[{date:todayISO(),type:"abono",amount,note:"Abono registrado",metodo},...(f.history||[])]}:f));
+    setSel(s=>({...s,balance:Math.max(0,s.balance-amount),history:[{date:todayISO(),type:"abono",amount,note:"Abono registrado",metodo},...(s.history||[])]}));
     showToast("Abono registrado");
   }
 
@@ -2798,7 +2874,7 @@ function FiadosView({ fiados, setFiados, showToast }) {
 }
 
 /* ============================== BOLETAS ============================== */
-function SaleDetailModal({ sale, onClose }) {
+function SaleDetailModal({ sale, profile, onClose }) {
   return (
     <Modal title={"Boleta "+sale.voucher} onClose={onClose} width={420}>
       <div className="grid grid-cols-2 gap-3 text-sm mb-4">
@@ -2808,12 +2884,13 @@ function SaleDetailModal({ sale, onClose }) {
         <div><div className="text-xs" style={{color:C.textMuted}}>Pago</div><div>{PAYMENT_LABEL[sale.paymentType]}</div></div>
       </div>
       <div className="flex flex-col gap-2 mb-3">{(sale.items||[]).map((it,i)=><div key={i} className="flex justify-between text-sm px-3 py-2 rounded-lg" style={{background:C.cream}}><span>{it.qty}x {it.name}</span><span style={{fontFamily:FONT_MONO}}>{formatCLP(it.price*it.qty)}</span></div>)}</div>
-      <div className="flex justify-between font-bold pt-3 text-sm" style={{borderTop:`1px solid ${C.border}`}}><span>Total</span><span style={{fontFamily:FONT_MONO}}>{formatCLP(sale.total)}</span></div>
+      <div className="flex justify-between font-bold pt-3 text-sm mb-4" style={{borderTop:`1px solid ${C.border}`}}><span>Total</span><span style={{fontFamily:FONT_MONO}}>{formatCLP(sale.total)}</span></div>
+      <Btn full icon={Printer} onClick={()=>imprimirComprobante(sale, profile)}>Imprimir comprobante</Btn>
     </Modal>
   );
 }
 
-function DetalleBoletaView({ sales, setSales, setProducts, products, showToast }) {
+function DetalleBoletaView({ sales, setSales, setProducts, products, profile, showToast }) {
   const [from,setFrom]=useState(daysAgoISO(30));
   const [to,setTo]=useState(todayISO());
   const [sel,setSel]=useState(null);
@@ -2870,7 +2947,7 @@ function DetalleBoletaView({ sales, setSales, setProducts, products, showToast }
           </div>
         )}
       </Card>
-      {sel&&<SaleDetailModal sale={sel} onClose={()=>setSel(null)}/>}
+      {sel&&<SaleDetailModal sale={sel} profile={profile} onClose={()=>setSel(null)}/>}
       {devolucion&&(
         <Modal title="Procesar devolución" onClose={()=>setDevolucion(null)} width={440}>
           <div className="p-4 rounded-xl mb-4" style={{background:C.dangerLight}}>
@@ -2892,15 +2969,20 @@ function DetalleBoletaView({ sales, setSales, setProducts, products, showToast }
 }
 
 /* ============================== REPORTE ============================== */
-function ReporteView({ sales, products }) {
+function ReporteView({ sales, products, citas, profile }) {
   const [from,setFrom]=useState(daysAgoISO(13));
   const [to,setTo]=useState(todayISO());
   const filtered=sales.filter(s=>{const d=s.datetime.slice(0,10);return d>=from&&d<=to;});
   const total=filtered.reduce((s,x)=>s+x.total,0);
   const avg=filtered.length?total/filtered.length:0;
   const chart=useMemo(()=>{ const m={}; filtered.forEach(s=>{const d=s.datetime.slice(0,10);m[d]=(m[d]||0)+s.total;}); return Object.keys(m).sort().map(d=>({date:d.slice(5),total:m[d]})); },[filtered]);
-  const top=useMemo(()=>{ const m={}; filtered.forEach(s=>(s.items||[]).forEach(it=>{m[it.name]=(m[it.name]||0)+it.qty;})); return Object.entries(m).sort((a,b)=>b[1]-a[1]).slice(0,5); },[filtered]);
-  const maxQ=top[0]?.[1]||1;
+  const porProducto=useMemo(()=>{ const m={}; filtered.forEach(s=>(s.items||[]).forEach(it=>{ if(!m[it.name]) m[it.name]={qty:0,total:0,productId:it.productId}; m[it.name].qty+=it.qty; m[it.name].total+=it.price*it.qty; })); return Object.entries(m).map(([name,v])=>({name,...v})).sort((a,b)=>b.qty-a.qty); },[filtered]);
+  const porServicio=useMemo(()=>{
+    if (!profile?.modules?.includes("agenda")) return null;
+    const citasRango=(citas||[]).filter(c=>c.fecha>=from&&c.fecha<=to&&c.estado!=="cancelada");
+    const m={}; citasRango.forEach(c=>{ if(!m[c.servicioNombre]) m[c.servicioNombre]={qty:0,total:0}; m[c.servicioNombre].qty+=1; m[c.servicioNombre].total+=c.precio||0; });
+    return Object.entries(m).map(([name,v])=>({name,...v})).sort((a,b)=>b.qty-a.qty);
+  },[citas,profile,from,to]);
 
   return (
     <div>
@@ -2930,25 +3012,58 @@ function ReporteView({ sales, products }) {
           </ResponsiveContainer>
         )}
       </Card>
-      <Card style={{padding:20}}>
-        <h3 className="text-sm font-bold mb-4" style={{fontFamily:FONT_DISPLAY,color:C.text}}>Productos más vendidos</h3>
-        {top.length===0?<EmptyState icon={Package} title="Sin datos"/>:(
-          <div className="flex flex-col gap-3">
-            {top.map(([name,qty])=>(
-              <div key={name}>
-                <div className="flex justify-between text-xs mb-1"><span style={{color:C.text}}>{name}</span><span style={{color:C.textMuted,fontFamily:FONT_MONO}}>{qty} uds.</span></div>
-                <div className="h-2 rounded-full" style={{background:C.cream}}><div className="h-2 rounded-full" style={{width:`${(qty/maxQ)*100}%`,background:C.orange}}/></div>
-              </div>
-            ))}
+      <Card style={{overflow:"hidden"}}>
+        <div className="px-5 py-4" style={{borderBottom:`1px solid ${C.border}`}}>
+          <h3 className="text-sm font-bold" style={{fontFamily:FONT_DISPLAY,color:C.text}}>Ventas por producto</h3>
+        </div>
+        {porProducto.length===0?<div className="p-6"><EmptyState icon={Package} title="Sin datos"/></div>:(
+          <div className="max-h-96 overflow-y-auto">
+            <table className="w-full text-sm">
+              <thead><tr style={{background:C.cream}}>{["Producto","Cantidad","Total vendido"].map(h=><th key={h} className="text-left px-4 py-2.5 font-semibold text-xs sticky top-0" style={{color:C.textMuted,background:C.cream}}>{h}</th>)}</tr></thead>
+              <tbody>{porProducto.map(p=>{
+                const prod = products.find(x=>x.id===p.productId);
+                return (
+                <tr key={p.name} style={{borderTop:`1px solid ${C.border}`}}>
+                  <td className="px-4 py-2.5"><div className="flex items-center gap-2.5">
+                    {prod?.imageUrl ? <img src={prod.imageUrl} alt="" className="w-8 h-8 rounded-lg object-cover shrink-0" onError={e=>e.target.style.display="none"}/> : <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{background:C.cream}}><Package size={14} color={C.textMuted}/></div>}
+                    <span style={{color:C.text}}>{p.name}</span>
+                  </div></td>
+                  <td className="px-4 py-2.5 text-xs" style={{color:C.textMuted}}>{p.qty} uds.</td>
+                  <td className="px-4 py-2.5 font-semibold" style={{fontFamily:FONT_MONO,color:C.text}}>{formatCLP(p.total)}</td>
+                </tr>
+              );})}</tbody>
+            </table>
           </div>
         )}
       </Card>
+
+      {porServicio && (
+        <Card style={{overflow:"hidden", marginTop:20}}>
+          <div className="px-5 py-4" style={{borderBottom:`1px solid ${C.border}`}}>
+            <h3 className="text-sm font-bold" style={{fontFamily:FONT_DISPLAY,color:C.text}}>Ventas por servicio</h3>
+          </div>
+          {porServicio.length===0?<div className="p-6"><EmptyState icon={Clock} title="Sin citas en este rango"/></div>:(
+            <div className="max-h-96 overflow-y-auto">
+              <table className="w-full text-sm">
+                <thead><tr style={{background:C.cream}}>{["Servicio","Citas","Total vendido"].map(h=><th key={h} className="text-left px-4 py-2.5 font-semibold text-xs sticky top-0" style={{color:C.textMuted,background:C.cream}}>{h}</th>)}</tr></thead>
+                <tbody>{porServicio.map(s=>(
+                  <tr key={s.name} style={{borderTop:`1px solid ${C.border}`}}>
+                    <td className="px-4 py-2.5" style={{color:C.text}}>{s.name}</td>
+                    <td className="px-4 py-2.5 text-xs" style={{color:C.textMuted}}>{s.qty}</td>
+                    <td className="px-4 py-2.5 font-semibold" style={{fontFamily:FONT_MONO,color:C.text}}>{formatCLP(s.total)}</td>
+                  </tr>
+                ))}</tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+      )}
     </div>
   );
 }
 
 /* ============================== CAJA ============================== */
-function CajaView({ sales, cajaState, setCajaState, showToast, currentUser }) {
+function CajaView({ sales, fiados, gastos, cajaState, setCajaState, showToast, currentUser }) {
   const [closeModal,setCloseModal]=useState(false);
   const [openModal,setOpenModal]=useState(false);
   const [editAperturaModal,setEditAperturaModal]=useState(false);
@@ -2961,7 +3076,9 @@ function CajaView({ sales, cajaState, setCajaState, showToast, currentUser }) {
   const turnosFiltrados = turnos.filter(t => !filtroFecha || t.apertura.slice(0,10)===filtroFecha);
   const salesToday=sales.filter(s=>s.datetime.slice(0,10)===today);
   const cashSales=salesToday.filter(s=>s.paymentType==="efectivo").reduce((s,x)=>s+x.total,0);
-  const expected=cajaState.openingAmount+cashSales;
+  const abonosEfectivoHoy = (fiados||[]).reduce((sum,f)=>sum+(f.history||[]).filter(h=>h.type==="abono"&&h.date===today&&h.metodo==="efectivo").reduce((s,h)=>s+h.amount,0),0);
+  const gastosEfectivoHoy = (gastos||[]).filter(g=>g.fecha===today&&g.metodoPago==="efectivo").reduce((s,g)=>s+g.monto,0);
+  const expected=cajaState.openingAmount+cashSales+abonosEfectivoHoy-gastosEfectivoHoy;
   const diff=counted!==""?Number(counted)-expected:0;
   const byMethod=PAYMENT_METHODS.map(m=>({...m,count:salesToday.filter(s=>s.paymentType===m.id).length,total:salesToday.filter(s=>s.paymentType===m.id).reduce((s,x)=>s+x.total,0)})).filter(m=>m.id!=="fiado");
 
@@ -3014,7 +3131,7 @@ function CajaView({ sales, cajaState, setCajaState, showToast, currentUser }) {
 
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5">
-        <Card style={{padding:18}}><div className="text-xs" style={{color:C.textMuted}}>Efectivo esperado</div><div className="text-2xl font-bold mt-1" style={{fontFamily:FONT_MONO,color:C.text}}>{formatCLP(expected)}</div><div className="text-xs mt-1" style={{color:C.textMuted}}>Apertura {formatCLP(cajaState.openingAmount)} + Ventas {formatCLP(cashSales)}</div></Card>
+        <Card style={{padding:18}}><div className="text-xs" style={{color:C.textMuted}}>Efectivo esperado</div><div className="text-2xl font-bold mt-1" style={{fontFamily:FONT_MONO,color:C.text}}>{formatCLP(expected)}</div><div className="text-xs mt-1" style={{color:C.textMuted}}>Apertura {formatCLP(cajaState.openingAmount)} + Ventas {formatCLP(cashSales)}{abonosEfectivoHoy>0?` + Abonos ${formatCLP(abonosEfectivoHoy)}`:""}{gastosEfectivoHoy>0?` - Gastos ${formatCLP(gastosEfectivoHoy)}`:""}</div></Card>
         <Card style={{padding:18}}><div className="text-xs" style={{color:C.textMuted}}>Total vendido hoy</div><div className="text-2xl font-bold mt-1" style={{fontFamily:FONT_MONO,color:C.text}}>{formatCLP(salesToday.reduce((s,x)=>s+x.total,0))}</div><div className="text-xs mt-1" style={{color:C.textMuted}}>{salesToday.length} boletas emitidas</div></Card>
       </div>
 
@@ -3412,7 +3529,7 @@ function ContabilidadView({ sales, products, gastos, setGastos, proveedores, set
   const [tab, setTab] = useState("panel");
   const [showGastoForm, setShowGastoForm] = useState(false);
   const [showProvForm, setShowProvForm] = useState(false);
-  const [gasto, setGasto] = useState({ fecha: todayISO(), categoria: GASTO_CATS[0], descripcion: "", monto: "", proveedor: "", facturaUrl: "", facturaNombre: "" });
+  const [gasto, setGasto] = useState({ fecha: todayISO(), categoria: GASTO_CATS[0], descripcion: "", monto: "", proveedor: "", facturaUrl: "", facturaNombre: "", metodoPago: "" });
   const [customCat, setCustomCat] = useState(false);
   const [prov, setProv] = useState({ nombre: "", rut: "", telefono: "", email: "", condiciones: "30 días" });
 
@@ -3687,7 +3804,7 @@ function ContabilidadView({ sales, products, gastos, setGastos, proveedores, set
           <Card style={{ overflow: "hidden" }}>
             {gastos.length === 0 ? <EmptyState icon={TrendingDown} title="Sin gastos registrados" subtitle="Agrega tus gastos para ver tus finanzas reales" /> : (
               <table className="w-full text-sm">
-                <thead><tr style={{ background: C.cream }}>{["Fecha", "Categoría", "Descripción", "Proveedor", "Monto", "Factura", ""].map(h => <th key={h} className="text-left px-4 py-3 font-semibold text-xs" style={{ color: C.textMuted }}>{h}</th>)}</tr></thead>
+                <thead><tr style={{ background: C.cream }}>{["Fecha", "Categoría", "Descripción", "Proveedor", "Pago", "Monto", "Factura", ""].map(h => <th key={h} className="text-left px-4 py-3 font-semibold text-xs" style={{ color: C.textMuted }}>{h}</th>)}</tr></thead>
                 <tbody>
                   {gastos.map(g => (
                     <tr key={g.id} style={{ borderTop: `1px solid ${C.border}` }}>
@@ -3695,6 +3812,7 @@ function ContabilidadView({ sales, products, gastos, setGastos, proveedores, set
                       <td className="px-4 py-3"><span className="px-2 py-1 rounded-md text-xs font-bold" style={{ background: C.orangeLight, color: C.orangeDark }}>{g.categoria}</span></td>
                       <td className="px-4 py-3" style={{ color: C.text }}>{g.descripcion}</td>
                       <td className="px-4 py-3 text-xs" style={{ color: C.textMuted }}>{g.proveedor || "—"}</td>
+                      <td className="px-4 py-3 text-xs" style={{ color: C.textMuted }}>{g.metodoPago ? PAYMENT_LABEL[g.metodoPago]||g.metodoPago : "—"}</td>
                       <td className="px-4 py-3 font-bold" style={{ fontFamily: FONT_MONO, color: C.danger }}>{formatCLP(g.monto)}</td>
                       <td className="px-4 py-3">
                         {g.facturaUrl
@@ -3741,6 +3859,20 @@ function ContabilidadView({ sales, products, gastos, setGastos, proveedores, set
                 <Field label="Monto ($)"><MoneyInput value={gasto.monto} onChange={v => setGasto({ ...gasto, monto: v })} placeholder="0" /></Field>
                 <Field label="Proveedor (opcional)"><input style={inputStyle} value={gasto.proveedor} onChange={e => setGasto({ ...gasto, proveedor: e.target.value })} placeholder="Nombre del proveedor" /></Field>
                 <div className="col-span-2">
+                  <Field label="¿Cómo lo pagaste? (opcional)">
+                    <div className="flex flex-wrap gap-2">
+                      {PAYMENT_METHODS.filter(m=>m.id!=="fiado"&&m.id!=="mixto").map(m=>(
+                        <button key={m.id} type="button" onClick={()=>setGasto({...gasto, metodoPago: gasto.metodoPago===m.id?"":m.id})}
+                          className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold"
+                          style={{border:`1.5px solid ${gasto.metodoPago===m.id?m.color:C.border}`, background:gasto.metodoPago===m.id?m.color+"15":"#fff", color:gasto.metodoPago===m.id?m.color:C.text}}>
+                          <m.icon size={13}/> {m.label}
+                        </button>
+                      ))}
+                    </div>
+                    {gasto.metodoPago==="efectivo" && <p className="text-[11px] mt-1.5" style={{color:C.textMuted}}>Se descontará del efectivo esperado en Caja 360° el día de hoy.</p>}
+                  </Field>
+                </div>
+                <div className="col-span-2">
                   <Field label="Factura o comprobante (opcional)">
                     <div className="flex items-center gap-3 flex-wrap">
                       <label className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-sm cursor-pointer shrink-0"
@@ -3769,7 +3901,7 @@ function ContabilidadView({ sales, products, gastos, setGastos, proveedores, set
                 <Btn icon={Check} onClick={() => {
                   if (!gasto.descripcion.trim() || !gasto.monto || !gasto.categoria.trim()) return;
                   setGastos([{ id: uid("g"), ...gasto, monto: Number(gasto.monto) }, ...gastos]);
-                  setGasto({ fecha: todayISO(), categoria: GASTO_CATS[0], descripcion: "", monto: "", proveedor: "", facturaUrl: "", facturaNombre: "" });
+                  setGasto({ fecha: todayISO(), categoria: GASTO_CATS[0], descripcion: "", monto: "", proveedor: "", facturaUrl: "", facturaNombre: "", metodoPago: "" });
                   setCustomCat(false);
                   setShowGastoForm(false);
                   showToast("Gasto registrado");
@@ -4312,13 +4444,18 @@ export default function App({ session, onLogout, isOwner, onOpenAdmin }) {
   useEffect(() => {
     if (!currentUser && session?.user && profileLoaded) {
       const existingAdmin = users.find(u => u.id === session.user.id);
+      const bypassPorPinOlvidado = sessionStorage.getItem("mimarket_bypass_pin_once") === "1";
       if (!existingAdmin) {
         const nombre = session.user.email ? session.user.email.split("@")[0] : "Admin";
         const u = { id: session.user.id, name: nombre.charAt(0).toUpperCase() + nombre.slice(1), role: "admin", pin: "" };
         setUsers([u, ...users]);
         setCurrentUser(u);
         if (!profile.onboardingCompleted) setOnboarding(true);
-      } else if (users.length <= 1) {
+      } else if (users.length <= 1 || bypassPorPinOlvidado) {
+        if (bypassPorPinOlvidado) {
+          sessionStorage.removeItem("mimarket_bypass_pin_once");
+          showToast("Entraste con tu correo — ve a Configurar → Usuarios para poner un PIN nuevo");
+        }
         setCurrentUser(existingAdmin);
         if (!profile.onboardingCompleted) setOnboarding(true);
       }
@@ -4336,6 +4473,9 @@ export default function App({ session, onLogout, isOwner, onOpenAdmin }) {
             setCurrentUser(u);
             setView(firstAllowedView(u.role));
           }} />
+          <button onClick={()=>{ sessionStorage.setItem("mimarket_bypass_pin_once","1"); supabase.auth.signOut(); }} className="fixed bottom-5 left-1/2 -translate-x-1/2 text-xs font-semibold px-4 py-2 rounded-full" style={{background:"#fff",border:`1px solid ${C.border}`,color:C.textMuted}}>
+            ¿Olvidaste tu PIN? Entrar con correo y contraseña
+          </button>
         </div>
       );
     }
@@ -4351,13 +4491,13 @@ export default function App({ session, onLogout, isOwner, onOpenAdmin }) {
       {view === "panel"      && currentUser.role === "admin" && <PanelView products={products} sales={sales} fiados={fiados} pedidos={pedidos} profile={profile} setProfile={setProfile} setView={setView} currentUser={currentUser} />}
       {view === "inventario" && canAccess("inventario_ver", currentUser.role) && <InventarioView products={products} setProducts={setProducts} showToast={showToast} profile={profile} gastos={gastos} setGastos={setGastos} readOnly={!canAccess("inventario_editar", currentUser.role)} />}
       {view === "venta"                                       && <VentaView {...viewProps} />}
-      {view === "reporte"    && canAccess("reporte", currentUser.role) && <ReporteView sales={sales} products={products} />}
+      {view === "reporte"    && canAccess("reporte", currentUser.role) && <ReporteView sales={sales} products={products} citas={citas} profile={profile} />}
       {view === "contabilidad" && canAccess("contabilidad", currentUser.role) && <ContabilidadView sales={sales} products={products} gastos={gastos} setGastos={setGastos} proveedores={proveedores} setProveedores={setProveedores} fiados={fiados} showToast={showToast} />}
-      {view === "caja"       && canAccess("caja", currentUser.role) && <CajaView sales={sales} cajaState={cajaState} setCajaState={setCajaState} showToast={showToast} currentUser={currentUser} />}
+      {view === "caja"       && canAccess("caja", currentUser.role) && <CajaView sales={sales} fiados={fiados} gastos={gastos} cajaState={cajaState} setCajaState={setCajaState} showToast={showToast} currentUser={currentUser} />}
       {view === "pedidos"    && canAccess("pedidos", currentUser.role) && profile.modules?.includes("pedidos") && <PedidosView pedidos={pedidos} setPedidos={setPedidos} products={products} setProducts={setProducts} sales={sales} setSales={setSales} counters={counters} setCounters={setCounters} showToast={showToast} />}
       {view === "agenda"     && canAccess("agenda", currentUser.role) && profile.modules?.includes("agenda") && <AgendaView profile={profile} setProfile={setProfile} servicios={servicios} setServicios={setServicios} citas={citas} setCitas={setCitas} users={users} showToast={showToast} />}
       {view === "fiados"     && canAccess("fiados", currentUser.role) && <FiadosView fiados={fiados} setFiados={setFiados} showToast={showToast} />}
-      {view === "boletas"    && canAccess("boletas", currentUser.role) && <DetalleBoletaView sales={sales} setSales={setSales} products={products} setProducts={setProducts} showToast={showToast} />}
+      {view === "boletas"    && canAccess("boletas", currentUser.role) && <DetalleBoletaView sales={sales} setSales={setSales} products={products} setProducts={setProducts} profile={profile} showToast={showToast} />}
       {view === "configurar" && currentUser.role === "admin" && <ConfigurarView profile={profile} setProfile={setProfile} showToast={showToast} users={users} currentUser={currentUser} onAddUser={addUser} onDeleteUser={deleteUser} onUpdateUser={updateUser} />}
       {view === "tutoriales"                                  && <TutorialesView />}
       {view === "ecommerce"  && currentUser.role === "admin" && <EcommerceView />}
