@@ -289,7 +289,7 @@ const TUTORIAL_TOPICS = [
   { id: "boletas",    label: "Boletas",       icon: Receipt,      tips: ["Cada boleta queda asociada a un vendedor y medio de pago.", "Usa el rango de fechas para encontrar una boleta antigua."] },
   { id: "configurar", label: "Configurar",    icon: Settings,     tips: ["Mantén actualizada la dirección de tu local.", "Agrega a tu equipo en Usuarios para repartir responsabilidades."] },
   { id: "ecommerce",  label: "Ecommerce",     icon: Globe,        tips: ["Confirma los pedidos pendientes apenas los veas.", "Usa los filtros de estado para enfocarte en lo urgente."] },
-  { id: "caja",       label: "Caja 360°",     icon: Wallet,       tips: ["Cuenta el efectivo físico antes de cerrar caja.", "Un faltante recurrente puede indicar ventas sin registrar."] },
+  { id: "caja",       label: "Caja",          icon: Wallet,       tips: ["Cuenta el efectivo físico antes de cerrar caja.", "Un faltante recurrente puede indicar ventas sin registrar."] },
 ];
 
 /* ============================== HELPERS ============================== */
@@ -329,6 +329,57 @@ function imprimirComprobante(sale, profile) {
       <div class="divider row bold"><span>TOTAL</span><span>${formatCLP(sale.total)}</span></div>
       <div class="muted">Pago: ${PAYMENT_LABEL[sale.paymentType]||sale.paymentType}</div>
       <div class="center muted" style="margin-top:16px;">¡Gracias por su compra! 🌸</div>
+    </body></html>
+  `);
+  w.document.close();
+  w.onload = () => { w.focus(); w.print(); };
+}
+
+function imprimirCorteDelDia(data, profile) {
+  const w = window.open("", "_blank", "width=480,height=700");
+  if (!w) { alert("Tu navegador bloqueó la ventana de impresión. Revisa el bloqueador de pop-ups."); return; }
+  const row = (label,val,bold)=>`<div class="row${bold?" bold":""}"><span>${label}</span><span>${val}</span></div>`;
+  const byMethodRows = data.byMethod.filter(m=>m.total>0).map(m=>row(m.label, formatCLP(m.total))).join("");
+  w.document.write(`
+    <html><head><title>Corte del día ${formatDate(data.fecha)}</title>
+    <style>
+      body{font-family:monospace;font-size:13px;width:360px;margin:16px auto;color:#111;}
+      .center{text-align:center;} .bold{font-weight:bold;}
+      h2{font-size:15px;margin:18px 0 8px;}
+      .row{display:flex;justify-content:space-between;margin-bottom:5px;}
+      .divider{border-top:1px dashed #999;margin:8px 0;padding-top:6px;}
+      .muted{color:#666;font-size:11px;}
+      .total{font-size:16px;margin-top:4px;}
+    </style></head>
+    <body>
+      <div class="center bold" style="font-size:15px;">${profile?.name||"MiMarket"}</div>
+      <div class="center muted">${profile?.rut||""}</div>
+      <div class="center bold" style="margin-top:10px;">CORTE DEL DÍA ${formatDate(data.fecha).toUpperCase()}</div>
+
+      <h2>Apertura de caja</h2>
+      <div class="divider">
+        ${row("Monto inicial en caja", formatCLP(data.openingAmount))}
+      </div>
+
+      <h2>Dinero en caja</h2>
+      <div class="divider">
+        ${row("Ventas en efectivo +", formatCLP(data.cashSales))}
+        ${row("Abonos de clientes +", formatCLP(data.abonos))}
+        ${row("Pagos a proveedores -", formatCLP(data.gastosEfectivo))}
+        ${row("Retiros de efectivo -", formatCLP(data.retiros||0))}
+        <div class="divider bold">${row("Total esperado en caja", formatCLP(data.expected))}</div>
+      </div>
+
+      <h2>Pagos recibidos por método</h2>
+      <div class="divider">${byMethodRows}</div>
+
+      <h2>Resumen del día</h2>
+      <div class="divider">
+        <div class="total bold">${row("Ventas totales", formatCLP(data.totalVentas))}</div>
+        ${row("Boletas emitidas", data.cantidadVentas)}
+      </div>
+
+      <div class="center muted" style="margin-top:16px;">${formatDateTime(new Date().toISOString())}</div>
     </body></html>
   `);
   w.document.close();
@@ -883,7 +934,7 @@ const NAV_ITEMS = [
   { id:"venta",         label:"Venta",          icon:ShoppingCart,    roles:["admin","vendedor"] },
   { id:"reporte",       label:"Reporte",        icon:BarChart3,       roles:["admin","vendedor"], permKey:"reporte" },
   { id:"contabilidad",  label:"Contabilidad",   icon:BookOpen,        roles:["admin","vendedor"], permKey:"contabilidad" },
-  { id:"caja",          label:"Caja 360°",      icon:Wallet,          roles:["admin","vendedor"], permKey:"caja" },
+  { id:"caja",          label:"Caja",           icon:Wallet,          roles:["admin","vendedor"], permKey:"caja" },
   { id:"pedidos",       label:"Pedidos",        icon:Truck,           roles:["admin","vendedor"], module:"pedidos", permKey:"pedidos" },
   { id:"agenda",        label:"Agenda",         icon:Clock,           roles:["admin","vendedor"], module:"agenda", permKey:"agenda" },
   { id:"fiados",        label:"Fiados",         icon:Coins,           roles:["admin","vendedor"], permKey:"fiados" },
@@ -897,7 +948,7 @@ const NAV_ITEMS = [
 const VENDOR_PERMS = [
   { id:"inventario_ver", label:"Ver Inventario", hint:"Puede ver productos, precios y stock" },
   { id:"inventario_editar", label:"Editar Inventario", hint:"Agregar, editar y borrar productos (si no, solo puede ver)" },
-  { id:"caja", label:"Caja 360°", hint:"Abrir y cerrar caja, ver turnos" },
+  { id:"caja", label:"Caja", hint:"Abrir y cerrar caja, ver turnos" },
   { id:"pedidos", label:"Pedidos", hint:"Ver y registrar pedidos de clientes" },
   { id:"agenda", label:"Agenda", hint:"Ver y agendar citas de servicios" },
   { id:"fiados", label:"Fiados", hint:"Ver y registrar fiados de clientes" },
@@ -3063,7 +3114,7 @@ function ReporteView({ sales, products, citas, profile }) {
 }
 
 /* ============================== CAJA ============================== */
-function CajaView({ sales, fiados, gastos, cajaState, setCajaState, showToast, currentUser }) {
+function CajaView({ sales, fiados, gastos, cajaState, setCajaState, showToast, currentUser, profile }) {
   const [closeModal,setCloseModal]=useState(false);
   const [openModal,setOpenModal]=useState(false);
   const [editAperturaModal,setEditAperturaModal]=useState(false);
@@ -3078,16 +3129,29 @@ function CajaView({ sales, fiados, gastos, cajaState, setCajaState, showToast, c
   const cashSales=salesToday.filter(s=>s.paymentType==="efectivo").reduce((s,x)=>s+x.total,0);
   const abonosEfectivoHoy = (fiados||[]).reduce((sum,f)=>sum+(f.history||[]).filter(h=>h.type==="abono"&&h.date===today&&h.metodo==="efectivo").reduce((s,h)=>s+h.amount,0),0);
   const gastosEfectivoHoy = (gastos||[]).filter(g=>g.fecha===today&&g.metodoPago==="efectivo").reduce((s,g)=>s+g.monto,0);
-  const expected=cajaState.openingAmount+cashSales+abonosEfectivoHoy-gastosEfectivoHoy;
+  const retiros = cajaState.retiros || [];
+  const retirosHoy = retiros.filter(r=>r.fecha===today).reduce((s,r)=>s+r.monto,0);
+  const expected=cajaState.openingAmount+cashSales+abonosEfectivoHoy-gastosEfectivoHoy-retirosHoy;
   const diff=counted!==""?Number(counted)-expected:0;
   const byMethod=PAYMENT_METHODS.map(m=>({...m,count:salesToday.filter(s=>s.paymentType===m.id).length,total:salesToday.filter(s=>s.paymentType===m.id).reduce((s,x)=>s+x.total,0)})).filter(m=>m.id!=="fiado");
+  const ultimoCierre = turnos.find(t=>t.cierre && t.montoContado!=null);
+  const [retiroModal, setRetiroModal] = useState(false);
+  const [retiroMonto, setRetiroMonto] = useState("");
+  const [retiroMotivo, setRetiroMotivo] = useState("");
 
   function abrirCaja() {
     const now = new Date().toISOString();
     const monto = Number(openingInput)||0;
-    setCajaState({isOpen:true,openedAt:now,openingAmount:monto,turnos:[{id:uid("t"),vendor:currentUser.name,apertura:now,cierre:null,ventasTurno:0,montoApertura:monto,montoContado:null,diferencia:null},...turnos]});
+    setCajaState({isOpen:true,openedAt:now,openingAmount:monto,turnos:[{id:uid("t"),vendor:currentUser.name,apertura:now,cierre:null,ventasTurno:0,montoApertura:monto,montoContado:null,diferencia:null},...turnos],retiros});
     setOpenModal(false); setOpeningInput("");
     showToast("Caja abierta");
+  }
+
+  function registrarRetiro() {
+    const monto = Number(retiroMonto)||0;
+    setCajaState({...cajaState, retiros:[{id:uid("ret"),fecha:today,hora:new Date().toISOString(),monto,motivo:retiroMotivo||"Sin motivo especificado",quien:currentUser.name},...retiros]});
+    setRetiroModal(false); setRetiroMonto(""); setRetiroMotivo("");
+    showToast("Retiro registrado");
   }
 
   function guardarEditApertura() {
@@ -3109,7 +3173,13 @@ function CajaView({ sales, fiados, gastos, cajaState, setCajaState, showToast, c
 
   return (
     <div>
-      <PageHeader title="Caja 360°" subtitle="Control de efectivo y turnos del día"/>
+      <PageHeader title="Caja" subtitle="Control de efectivo y turnos del día" right={
+        <Btn variant="outline" icon={Printer} onClick={()=>imprimirCorteDelDia({
+          fecha: today, openingAmount: cajaState.openingAmount, cashSales, abonos: abonosEfectivoHoy,
+          gastosEfectivo: gastosEfectivoHoy, retiros: retirosHoy, expected, byMethod, totalVentas: salesToday.reduce((s,x)=>s+x.total,0),
+          cantidadVentas: salesToday.length,
+        }, profile)}>Imprimir corte del día</Btn>
+      }/>
       <Card style={{padding:20}} className="mb-5 flex items-center justify-between flex-wrap gap-4">
         <div className="flex items-center gap-3">
           <div className="w-11 h-11 rounded-xl flex items-center justify-center" style={{background:cajaState.isOpen?C.successLight:C.dangerLight}}><Wallet size={20} color={cajaState.isOpen?C.success:C.danger}/></div>
@@ -3126,12 +3196,15 @@ function CajaView({ sales, fiados, gastos, cajaState, setCajaState, showToast, c
             {cajaState.isOpen && <div className="text-xs mt-0.5 flex items-center gap-1" style={{color:C.teal}}><UserCheck size={11}/> Turno: {currentUser.name}</div>}
           </div>
         </div>
-        {cajaState.isOpen?<Btn variant="dark" onClick={()=>setCloseModal(true)}>Cerrar caja</Btn>:<Btn onClick={()=>setOpenModal(true)}>Abrir caja</Btn>}
+        <div className="flex gap-2">
+          {cajaState.isOpen && currentUser.role==="admin" && <Btn variant="outline" onClick={()=>setRetiroModal(true)}>Retirar efectivo</Btn>}
+          {cajaState.isOpen?<Btn variant="dark" onClick={()=>setCloseModal(true)}>Cerrar caja</Btn>:<Btn onClick={()=>{setOpeningInput(ultimoCierre?ultimoCierre.montoContado:"");setOpenModal(true);}}>Abrir caja</Btn>}
+        </div>
       </Card>
 
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5">
-        <Card style={{padding:18}}><div className="text-xs" style={{color:C.textMuted}}>Efectivo esperado</div><div className="text-2xl font-bold mt-1" style={{fontFamily:FONT_MONO,color:C.text}}>{formatCLP(expected)}</div><div className="text-xs mt-1" style={{color:C.textMuted}}>Apertura {formatCLP(cajaState.openingAmount)} + Ventas {formatCLP(cashSales)}{abonosEfectivoHoy>0?` + Abonos ${formatCLP(abonosEfectivoHoy)}`:""}{gastosEfectivoHoy>0?` - Gastos ${formatCLP(gastosEfectivoHoy)}`:""}</div></Card>
+        <Card style={{padding:18}}><div className="text-xs" style={{color:C.textMuted}}>Efectivo esperado</div><div className="text-2xl font-bold mt-1" style={{fontFamily:FONT_MONO,color:C.text}}>{formatCLP(expected)}</div><div className="text-xs mt-1" style={{color:C.textMuted}}>Apertura {formatCLP(cajaState.openingAmount)} + Ventas {formatCLP(cashSales)}{abonosEfectivoHoy>0?` + Abonos ${formatCLP(abonosEfectivoHoy)}`:""}{gastosEfectivoHoy>0?` - Gastos ${formatCLP(gastosEfectivoHoy)}`:""}{retirosHoy>0?` - Retiros ${formatCLP(retirosHoy)}`:""}</div></Card>
         <Card style={{padding:18}}><div className="text-xs" style={{color:C.textMuted}}>Total vendido hoy</div><div className="text-2xl font-bold mt-1" style={{fontFamily:FONT_MONO,color:C.text}}>{formatCLP(salesToday.reduce((s,x)=>s+x.total,0))}</div><div className="text-xs mt-1" style={{color:C.textMuted}}>{salesToday.length} boletas emitidas</div></Card>
       </div>
 
@@ -3172,6 +3245,17 @@ function CajaView({ sales, fiados, gastos, cajaState, setCajaState, showToast, c
         </Card>
       )}
 
+      {retiroModal&&(
+        <Modal title="Retirar efectivo" onClose={()=>setRetiroModal(false)} width={380}>
+          <p className="text-xs mb-4" style={{color:C.textMuted}}>Para cuando sacas plata de la caja hacia el banco o para otro uso — se descuenta del efectivo esperado, pero no se cuenta como gasto del negocio.</p>
+          <Field label="Monto a retirar"><MoneyInput value={retiroMonto} onChange={setRetiroMonto} placeholder="0" autoFocus/></Field>
+          <div className="mt-3"><Field label="Motivo (opcional)"><input style={inputStyle} value={retiroMotivo} onChange={e=>setRetiroMotivo(e.target.value)} placeholder="Ej: depósito al banco"/></Field></div>
+          <div className="flex justify-end gap-2 mt-6">
+            <Btn variant="ghost" onClick={()=>setRetiroModal(false)}>Cancelar</Btn>
+            <Btn onClick={registrarRetiro} disabled={!(Number(retiroMonto)>0)}>Registrar retiro</Btn>
+          </div>
+        </Modal>
+      )}
       {editAperturaModal&&(
         <Modal title="Corregir monto de apertura" onClose={()=>setEditAperturaModal(false)} width={380}>
           <Field label="¿Con cuánto efectivo abriste la caja realmente?"><MoneyInput value={editAperturaInput} onChange={setEditAperturaInput} placeholder="0" autoFocus/></Field>
@@ -4493,7 +4577,7 @@ export default function App({ session, onLogout, isOwner, onOpenAdmin }) {
       {view === "venta"                                       && <VentaView {...viewProps} />}
       {view === "reporte"    && canAccess("reporte", currentUser.role) && <ReporteView sales={sales} products={products} citas={citas} profile={profile} />}
       {view === "contabilidad" && canAccess("contabilidad", currentUser.role) && <ContabilidadView sales={sales} products={products} gastos={gastos} setGastos={setGastos} proveedores={proveedores} setProveedores={setProveedores} fiados={fiados} showToast={showToast} />}
-      {view === "caja"       && canAccess("caja", currentUser.role) && <CajaView sales={sales} fiados={fiados} gastos={gastos} cajaState={cajaState} setCajaState={setCajaState} showToast={showToast} currentUser={currentUser} />}
+      {view === "caja"       && canAccess("caja", currentUser.role) && <CajaView sales={sales} fiados={fiados} gastos={gastos} cajaState={cajaState} setCajaState={setCajaState} showToast={showToast} currentUser={currentUser} profile={profile} />}
       {view === "pedidos"    && canAccess("pedidos", currentUser.role) && profile.modules?.includes("pedidos") && <PedidosView pedidos={pedidos} setPedidos={setPedidos} products={products} setProducts={setProducts} sales={sales} setSales={setSales} counters={counters} setCounters={setCounters} showToast={showToast} />}
       {view === "agenda"     && canAccess("agenda", currentUser.role) && profile.modules?.includes("agenda") && <AgendaView profile={profile} setProfile={setProfile} servicios={servicios} setServicios={setServicios} citas={citas} setCitas={setCitas} users={users} showToast={showToast} />}
       {view === "fiados"     && canAccess("fiados", currentUser.role) && <FiadosView fiados={fiados} setFiados={setFiados} showToast={showToast} />}
