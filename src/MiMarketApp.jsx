@@ -1420,7 +1420,22 @@ function ProductFormModal({ initial, categories, onClose, onSave }) {
         ) : (
           <div />
         )}
-        <Field label="Categoría"><select style={inputStyle} value={form.category} onChange={e=>setForm({...form,category:e.target.value})}>{cats.map(c=><option key={c}>{c}</option>)}</select></Field>
+        <Field label="Categoría">
+          {form.nuevaCategoria ? (
+            <div className="flex gap-2">
+              <input style={inputStyle} autoFocus value={form.category} onChange={e=>setForm({...form,category:e.target.value})} placeholder="Nombre de la nueva categoría"/>
+              <button type="button" onClick={()=>setForm({...form,nuevaCategoria:false,category:cats[0]})} className="text-xs font-semibold px-2 shrink-0" style={{color:C.textMuted}}>Cancelar</button>
+            </div>
+          ) : (
+            <select style={inputStyle} value={form.category} onChange={e=>{
+              if (e.target.value==="__nueva__") setForm({...form,nuevaCategoria:true,category:""});
+              else setForm({...form,category:e.target.value});
+            }}>
+              {cats.map(c=><option key={c}>{c}</option>)}
+              <option value="__nueva__">+ Otra categoría...</option>
+            </select>
+          )}
+        </Field>
         <Field label="Precio de venta"><MoneyInput value={form.salePrice} onChange={v=>setForm({...form,salePrice:v})} placeholder="0"/></Field>
         <Field label="Precio de compra"><MoneyInput value={form.purchasePrice} onChange={v=>setForm({...form,purchasePrice:v})} placeholder="0"/></Field>
         <Field label="Stock"><input type="number" style={inputStyle} value={form.stock} onChange={e=>setForm({...form,stock:e.target.value})} placeholder="0"/></Field>
@@ -1467,7 +1482,7 @@ function ProductFormModal({ initial, categories, onClose, onSave }) {
   );
 }
 
-function InventarioView({ products, setProducts, showToast, profile, gastos, setGastos, readOnly=false }) {
+function InventarioView({ products, setProducts, showToast, profile, setProfile, gastos, setGastos, readOnly=false }) {
   const categories = activeCategories(profile);
   const [search, setSearch] = useState("");
   const [cat,    setCat]    = useState("Todas");
@@ -1582,6 +1597,11 @@ function InventarioView({ products, setProducts, showToast, profile, gastos, set
       </>
       )}
       {showForm && <ProductFormModal initial={editing} categories={categories} onClose={()=>setShowForm(false)} onSave={data=>{
+        const { nuevaCategoria, ...dataLimpia } = data;
+        if (dataLimpia.category && !categories.includes(dataLimpia.category)) {
+          setProfile({...profile, categories:[...categories, dataLimpia.category]});
+        }
+        data = dataLimpia;
         if(editing) {
           setProducts(products.map(p=>p.id===editing.id?{...p,...data}:p));
           showToast("Producto actualizado");
@@ -3674,126 +3694,150 @@ function ContabilidadView({ sales, products, gastos, setGastos, proveedores, set
   // Ratios
   const puntoEquilibrio = otrosGastos > 0 && margenBruto > 0 ? (otrosGastos / (Number(margenBruto) / 100)).toFixed(0) : 0;
 
-  function exportarExcel() {
-    const XLSX = window.XLSX;
-    if (!XLSX) { showToast("Cargando exportador...", "error"); return; }
+  async function exportarExcel() {
+    const ExcelJS = window.ExcelJS;
+    if (!ExcelJS) { showToast("Cargando exportador...", "error"); return; }
 
-    const wb = XLSX.utils.book_new();
-    const naranja = "FF6B00";
-    const oscuro  = "1C0A00";
-    const blanco  = "FFFFFF";
-    const grisClaro = "F8F9FA";
-    const borde = { top:{style:"thin",color:{rgb:"E5E7EB"}}, bottom:{style:"thin",color:{rgb:"E5E7EB"}}, left:{style:"thin",color:{rgb:"E5E7EB"}}, right:{style:"thin",color:{rgb:"E5E7EB"}} };
+    const wb = new ExcelJS.Workbook();
+    const NARANJA = "FFFF6B00", OSCURO = "FF1C0A00", BLANCO = "FFFFFFFF", GRIS = "FFF8F9FA";
+    const VERDE = "FFECFDF5", VERDE_TXT = "FF1D7D4E", ROJO = "FFFFF1F2", ROJO_TXT = "FFD32B2B";
+    const bordeFino = { style:"thin", color:{argb:"FFE5E7EB"} };
+    const borde = { top:bordeFino, bottom:bordeFino, left:bordeFino, right:bordeFino };
 
-    function hdrStyle(bg=naranja) { return { font:{bold:true,color:{rgb:blanco},sz:11}, fill:{fgColor:{rgb:bg}}, alignment:{horizontal:"center",vertical:"center"}, border:borde }; }
-    function cellStyle(bold=false,color=oscuro,bg=blanco) { return { font:{bold,color:{rgb:color.replace("#","")},sz:10}, fill:{fgColor:{rgb:bg.replace("#","")}}, border:borde, alignment:{vertical:"center"} }; }
-    function moneyStyle(bold=false,color="000000") { return { font:{bold,color:{rgb:color},sz:10}, fill:{fgColor:{rgb:blanco}}, numFmt:"$#,##0", border:borde }; }
-    function titleStyle() { return { font:{bold:true,color:{rgb:naranja},sz:14}, alignment:{horizontal:"left"} }; }
+    function estiloHeader(row, bg=NARANJA) {
+      row.eachCell(cell => {
+        cell.font = { bold:true, color:{argb:BLANCO}, size:11 };
+        cell.fill = { type:"pattern", pattern:"solid", fgColor:{argb:bg} };
+        cell.alignment = { horizontal:"center", vertical:"middle" };
+        cell.border = borde;
+      });
+    }
+    function estiloFila(row, {bold=false, bg=null, color=OSCURO, money=[], pct=[]}={}) {
+      row.eachCell((cell,i) => {
+        cell.font = { bold, color:{argb:color}, size:10 };
+        if (bg) cell.fill = { type:"pattern", pattern:"solid", fgColor:{argb:bg} };
+        cell.border = borde;
+        if (money.includes(i)) cell.numFmt = "$#,##0";
+        if (pct.includes(i)) cell.numFmt = "0.0%";
+      });
+    }
 
-    // ===================== HOJA 1: RESUMEN =====================
-    const resumen = [
-      ["", "", "", "", ""],
-      ["  MiMarket — Reporte Financiero", "", "", "", formatDate(todayISO())],
-      ["", "", "", "", ""],
-      ["ESTADO DE RESULTADOS", "", "", "", ""],
-      ["Concepto", "", "", "Monto", ""],
-      ["Ingresos por ventas", "", "", totalVentas, ""],
-      ["Costo mercadería", "", "", -costoMercaderia, ""],
-      ["UTILIDAD BRUTA", "", "", utilidadBruta, ""],
-      ["Otros gastos operacionales", "", "", -otrosGastos, ""],
-      ["UTILIDAD NETA", "", "", utilidadNeta, ""],
-      ["", "", "", "", ""],
-      ["RATIOS CLAVE", "", "", "", ""],
-      ["Indicador", "", "", "Valor", ""],
-      ["Margen bruto", "", "", margenBruto + "%", ""],
-      ["Margen neto", "", "", margenNeto + "%", ""],
-      ["Punto de equilibrio", "", "", Number(puntoEquilibrio), ""],
-      ["Ticket promedio", "", "", sales.length ? totalVentas / sales.length : 0, ""],
-      ["Total boletas emitidas", "", "", sales.length, ""],
-      ["", "", "", "", ""],
-      ["PROYECCIÓN PRÓXIMO MES", "", "", "", ""],
-      ["Ventas estimadas", "", "", proyeccion.ventas, ""],
-      ["Gastos estimados", "", "", proyeccion.gastos, ""],
-      ["Utilidad estimada", "", "", proyeccion.utilidad, ""],
-    ];
-    const ws1 = XLSX.utils.aoa_to_sheet(resumen);
-    ws1["!cols"] = [{ wch: 30 }, { wch: 10 }, { wch: 10 }, { wch: 18 }, { wch: 15 }];
-    ws1["!merges"] = [
-      { s:{r:1,c:0}, e:{r:1,c:3} },
-      { s:{r:3,c:0}, e:{r:3,c:4} },
-      { s:{r:11,c:0}, e:{r:11,c:4} },
-      { s:{r:19,c:0}, e:{r:19,c:4} },
-    ];
-    if (ws1["B2"]) ws1["B2"].s = titleStyle();
-    if (ws1["A2"]) ws1["A2"].s = titleStyle();
-    ["A4","A12","A20"].forEach(c => { if(ws1[c]) ws1[c].s = hdrStyle(); });
-    ["A5","D5","A13","D13","A21"].forEach(c => { if(ws1[c]) ws1[c].s = hdrStyle("333333"); });
-    ["A8","D8"].forEach(c => { if(ws1[c]) ws1[c].s = cellStyle(true,"000000",grisClaro); });
-    ["A10","D10"].forEach(c => { if(ws1[c]) ws1[c].s = cellStyle(true, utilidadNeta>=0?"1D7D4E":"D32B2B", utilidadNeta>=0?"ECFDF5":"FFF1F2"); });
-    XLSX.utils.book_append_sheet(wb, ws1, "📊 Resumen");
+    // ===================== HOJA 1: RESUMEN (Balance + Resultados + Ratios + Proyección) =====================
+    const ws1 = wb.addWorksheet("📊 Resumen");
+    ws1.columns = [{width:32},{width:14},{width:14},{width:18},{width:16}];
+
+    ws1.mergeCells("A1:E1");
+    const titulo = ws1.getCell("A1"); titulo.value = `MiMarket — Reporte Financiero (${formatDate(todayISO())})`;
+    titulo.font = { bold:true, color:{argb:NARANJA}, size:15 };
+    ws1.addRow([]);
+
+    function seccion(texto) {
+      const r = ws1.addRow([texto,"","","",""]);
+      ws1.mergeCells(`A${r.number}:E${r.number}`);
+      estiloHeader(r, "FF333333");
+    }
+    function subHeader(col1, col2) {
+      const r = ws1.addRow([col1,"","",col2,""]);
+      ws1.mergeCells(`A${r.number}:C${r.number}`);
+      estiloHeader(r);
+    }
+    function dato(label, valor, opts={}) {
+      const { pct, money, ...resto } = opts;
+      const r = ws1.addRow([label,"","",valor,""]);
+      ws1.mergeCells(`A${r.number}:C${r.number}`);
+      ws1.mergeCells(`D${r.number}:E${r.number}`);
+      estiloFila(r, { money: pct?[]:(money===false?[]:[4]), pct: pct?[4]:[], ...resto });
+    }
+
+    seccion("BALANCE GENERAL — ACTIVOS");
+    subHeader("Concepto","Monto");
+    dato("Efectivo en caja", efectivoEnCaja);
+    dato("Cuentas por cobrar (Fiados)", cuentasPorCobrar);
+    dato("Valor inventario", valorInventario);
+    dato("Ingresos por transferencia / tarjeta", ingresosTarjetaTransfer);
+    dato("TOTAL ACTIVOS", totalActivos, { bold:true, bg:VERDE, color:VERDE_TXT });
+
+    ws1.addRow([]);
+    seccion("BALANCE GENERAL — PASIVOS Y PATRIMONIO");
+    subHeader("Concepto","Monto");
+    dato("Cuentas por pagar (proveedores)", 0);
+    dato("Gastos pendientes", 0);
+    dato("Capital invertido", totalGastos);
+    dato("Utilidad acumulada", utilidadNeta);
+    dato("TOTAL PASIVOS + PATRIMONIO", totalPasivos, { bold:true, bg:"FFEFF6FF", color:"FF1D4ED8" });
+
+    ws1.addRow([]);
+    seccion("ESTADO DE RESULTADOS");
+    subHeader("Concepto","Monto");
+    dato("Ingresos por ventas", totalVentas);
+    dato("Costo de mercadería vendida", -costoMercaderia);
+    dato("UTILIDAD BRUTA", utilidadBruta, { bold:true, bg:GRIS });
+    dato("Gastos operacionales", -otrosGastos);
+    dato("UTILIDAD NETA", utilidadNeta, { bold:true, bg:utilidadNeta>=0?VERDE:ROJO, color:utilidadNeta>=0?VERDE_TXT:ROJO_TXT });
+
+    ws1.addRow([]);
+    seccion("RATIOS CLAVE");
+    subHeader("Indicador","Valor");
+    dato("Margen bruto", Number(margenBruto)/100, { pct:true });
+    dato("Margen neto", Number(margenNeto)/100, { pct:true });
+    dato("Punto de equilibrio", Number(puntoEquilibrio));
+    dato("Ticket promedio", sales.length ? totalVentas/sales.length : 0);
+    dato("Total boletas emitidas", sales.length, { money:false });
+
+    ws1.addRow([]);
+    seccion("PROYECCIÓN PRÓXIMO MES");
+    subHeader("Concepto","Monto");
+    dato("Ventas estimadas", proyeccion.ventas);
+    dato("Gastos estimados", proyeccion.gastos);
+    dato("Utilidad estimada", proyeccion.utilidad, { bold:true, bg:proyeccion.utilidad>=0?VERDE:ROJO, color:proyeccion.utilidad>=0?VERDE_TXT:ROJO_TXT });
 
     // ===================== HOJA 2: VENTAS =====================
-    const ventasData = [
-      ["Voucher", "Boleta SII", "Fecha", "Vendedor", "Medio de Pago", "N° Items", "Total"],
-      ...sales.map(s => [s.voucher, s.boletaSII, formatDateTime(s.datetime), s.vendor, PAYMENT_LABEL[s.paymentType] || s.paymentType, (s.items||[]).length, s.total]),
-      ["", "", "", "", "", "TOTAL", sales.reduce((a,s)=>a+s.total,0)],
-    ];
-    const ws2 = XLSX.utils.aoa_to_sheet(ventasData);
-    ws2["!cols"] = [{ wch:12 },{ wch:12 },{ wch:18 },{ wch:15 },{ wch:15 },{ wch:10 },{ wch:14 }];
-    ["A1","B1","C1","D1","E1","F1","G1"].forEach(c => { if(ws2[c]) ws2[c].s = hdrStyle(); });
-    XLSX.utils.book_append_sheet(wb, ws2, "💰 Ventas");
+    const ws2 = wb.addWorksheet("💰 Ventas");
+    ws2.columns = [{width:12},{width:12},{width:18},{width:15},{width:16},{width:10},{width:14}];
+    estiloHeader(ws2.addRow(["Voucher","Boleta SII","Fecha","Vendedor","Medio de Pago","N° Items","Total"]));
+    sales.forEach(s => estiloFila(ws2.addRow([s.voucher, s.boletaSII, formatDateTime(s.datetime), s.vendor, PAYMENT_LABEL[s.paymentType]||s.paymentType, (s.items||[]).length, s.total]), {money:[7]}));
+    estiloFila(ws2.addRow(["","","","","","TOTAL", sales.reduce((a,s)=>a+s.total,0)]), {bold:true, bg:GRIS, money:[7]});
 
     // ===================== HOJA 3: GASTOS =====================
-    const gastosData = [
-      ["Fecha", "Categoría", "Descripción", "Proveedor", "Monto"],
-      ...gastos.map(g => [formatDate(g.fecha), g.categoria, g.descripcion, g.proveedor || "—", g.monto]),
-      ["", "", "", "TOTAL", gastos.reduce((a,g)=>a+g.monto,0)],
-    ];
-    const ws3 = XLSX.utils.aoa_to_sheet(gastosData);
-    ws3["!cols"] = [{ wch:12 },{ wch:20 },{ wch:30 },{ wch:20 },{ wch:14 }];
-    ["A1","B1","C1","D1","E1"].forEach(c => { if(ws3[c]) ws3[c].s = hdrStyle(); });
-    XLSX.utils.book_append_sheet(wb, ws3, "💸 Gastos");
+    const ws3 = wb.addWorksheet("💸 Gastos");
+    ws3.columns = [{width:12},{width:20},{width:32},{width:20},{width:14},{width:14}];
+    estiloHeader(ws3.addRow(["Fecha","Categoría","Descripción","Proveedor","Pago","Monto"]));
+    gastos.forEach(g => estiloFila(ws3.addRow([formatDate(g.fecha), g.categoria, g.descripcion, g.proveedor||"—", g.metodoPago?(PAYMENT_LABEL[g.metodoPago]||g.metodoPago):"—", g.monto]), {money:[6]}));
+    estiloFila(ws3.addRow(["","","","","TOTAL", gastos.reduce((a,g)=>a+g.monto,0)]), {bold:true, bg:GRIS, money:[6]});
 
     // ===================== HOJA 4: INVENTARIO =====================
-    const inventData = [
-      ["Producto", "Categoría", "Formato", "Precio Compra", "Precio Venta", "Stock", "Valor en Bodega"],
-      ...products.map(p => [p.name, p.category, p.format, p.purchasePrice, p.salePrice, p.stock, p.purchasePrice * p.stock]),
-      ["", "", "", "", "", "TOTAL BODEGA", products.reduce((a,p)=>a+p.purchasePrice*p.stock,0)],
-    ];
-    const ws4 = XLSX.utils.aoa_to_sheet(inventData);
-    ws4["!cols"] = [{ wch:28 },{ wch:18 },{ wch:12 },{ wch:14 },{ wch:14 },{ wch:8 },{ wch:16 }];
-    ["A1","B1","C1","D1","E1","F1","G1"].forEach(c => { if(ws4[c]) ws4[c].s = hdrStyle(); });
-    XLSX.utils.book_append_sheet(wb, ws4, "📦 Inventario");
+    const ws4 = wb.addWorksheet("📦 Inventario");
+    ws4.columns = [{width:28},{width:18},{width:12},{width:14},{width:14},{width:8},{width:16}];
+    estiloHeader(ws4.addRow(["Producto","Categoría","Formato","Precio Compra","Precio Venta","Stock","Valor en Bodega"]));
+    products.forEach(p => estiloFila(ws4.addRow([p.name, p.category, p.format, p.purchasePrice, p.salePrice, p.stock, p.purchasePrice*p.stock]), {money:[4,5,7]}));
+    estiloFila(ws4.addRow(["","","","","","TOTAL BODEGA", products.reduce((a,p)=>a+p.purchasePrice*p.stock,0)]), {bold:true, bg:GRIS, money:[7]});
 
     // ===================== HOJA 5: FIADOS =====================
-    const fiadosData = [
-      ["Cliente", "RUT", "Teléfono", "Saldo Pendiente"],
-      ...(fiados.length ? fiados.map(f => [f.name, f.rut, f.phone, f.balance]) : [["Sin fiados registrados","","",0]]),
-      ["", "", "TOTAL PENDIENTE", fiados.reduce((a,f)=>a+f.balance,0)],
-    ];
-    const ws5 = XLSX.utils.aoa_to_sheet(fiadosData);
-    ws5["!cols"] = [{ wch:22 },{ wch:14 },{ wch:16 },{ wch:16 }];
-    ["A1","B1","C1","D1"].forEach(c => { if(ws5[c]) ws5[c].s = hdrStyle(); });
-    XLSX.utils.book_append_sheet(wb, ws5, "🤝 Fiados");
+    const ws5 = wb.addWorksheet("🤝 Fiados");
+    ws5.columns = [{width:22},{width:14},{width:16},{width:16}];
+    estiloHeader(ws5.addRow(["Cliente","RUT","Teléfono","Saldo Pendiente"]));
+    (fiados.length?fiados:[{name:"Sin fiados registrados",rut:"",phone:"",balance:0}]).forEach(f => estiloFila(ws5.addRow([f.name, f.rut, f.phone, f.balance]), {money:[4]}));
+    estiloFila(ws5.addRow(["","","TOTAL PENDIENTE", fiados.reduce((a,f)=>a+f.balance,0)]), {bold:true, bg:GRIS, money:[4]});
 
     // ===================== HOJA 6: PROVEEDORES =====================
-    const provData = [
-      ["Nombre", "RUT", "Teléfono", "Email", "Condiciones de Pago"],
-      ...proveedores.map(p => [p.nombre, p.rut, p.telefono, p.email, p.condiciones]),
-    ];
-    const ws6 = XLSX.utils.aoa_to_sheet(provData);
-    ws6["!cols"] = [{ wch:25 },{ wch:14 },{ wch:16 },{ wch:25 },{ wch:18 }];
-    ["A1","B1","C1","D1","E1"].forEach(c => { if(ws6[c]) ws6[c].s = hdrStyle(); });
-    XLSX.utils.book_append_sheet(wb, ws6, "🚚 Proveedores");
+    const ws6 = wb.addWorksheet("🚚 Proveedores");
+    ws6.columns = [{width:25},{width:14},{width:16},{width:25},{width:18}];
+    estiloHeader(ws6.addRow(["Nombre","RUT","Teléfono","Email","Condiciones de Pago"]));
+    proveedores.forEach(p => estiloFila(ws6.addRow([p.nombre, p.rut, p.telefono, p.email, p.condiciones])));
 
-    XLSX.writeFile(wb, `MiMarket_Contabilidad_${todayISO()}.xlsx`);
+    const buffer = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `MiMarket_Contabilidad_${todayISO()}.xlsx`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
     showToast("Excel descargado correctamente");
   }
 
   useEffect(() => {
-    if (!window.XLSX) {
+    if (!window.ExcelJS) {
       const s = document.createElement("script");
-      s.src = "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
+      s.src = "https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js";
       document.head.appendChild(s);
     }
   }, []);
@@ -4050,7 +4094,8 @@ function ContabilidadView({ sales, products, gastos, setGastos, proveedores, set
         const efectivoEnCaja = sales.filter(s => s.paymentType === "efectivo").reduce((a, s) => a + s.total, 0);
         const ingresosTarjetaTransfer = sales.filter(s => ["debito","credito","transferencia"].includes(s.paymentType)).reduce((a, s) => a + s.total, 0);
         const valorInventario = products.reduce((s, p) => s + p.purchasePrice * p.stock, 0);
-        const totalActivos = totalVentas + valorInventario;
+        const cuentasPorCobrar = (fiados||[]).reduce((s,f)=>s+f.balance, 0);
+        const totalActivos = totalVentas + valorInventario + cuentasPorCobrar;
         const totalPasivos = totalGastos + utilidadNeta;
         return (
           <div className="flex flex-col gap-5">
@@ -4081,7 +4126,7 @@ function ContabilidadView({ sales, products, gastos, setGastos, proveedores, set
               <Card style={{ padding: 24 }}>
                 <h3 className="font-bold mb-2 text-base" style={{ fontFamily: FONT_DISPLAY, color: C.text }}>Activos</h3>
                 <InfoRow label="Efectivo en caja" value={efectivoEnCaja} color={C.text} />
-                <InfoRow label="Cuentas por cobrar (Fiados)" value={0} color={C.text} />
+                <InfoRow label="Cuentas por cobrar (Fiados)" value={cuentasPorCobrar} color={C.text} />
                 <InfoRow label="Valor inventario" value={valorInventario} color={C.text} />
                 <InfoRow label="Ingresos por transferencia / tarjeta" value={ingresosTarjetaTransfer} color={C.text} />
                 <InfoRow label="TOTAL ACTIVOS" value={totalActivos} color={C.success} bold border />
@@ -4573,7 +4618,7 @@ export default function App({ session, onLogout, isOwner, onOpenAdmin }) {
   const content = (
     <div className="p-4 md:p-7" style={{ paddingBottom: isTablet ? 100 : 32 }}>
       {view === "panel"      && currentUser.role === "admin" && <PanelView products={products} sales={sales} fiados={fiados} pedidos={pedidos} profile={profile} setProfile={setProfile} setView={setView} currentUser={currentUser} />}
-      {view === "inventario" && canAccess("inventario_ver", currentUser.role) && <InventarioView products={products} setProducts={setProducts} showToast={showToast} profile={profile} gastos={gastos} setGastos={setGastos} readOnly={!canAccess("inventario_editar", currentUser.role)} />}
+      {view === "inventario" && canAccess("inventario_ver", currentUser.role) && <InventarioView products={products} setProducts={setProducts} showToast={showToast} profile={profile} setProfile={setProfile} gastos={gastos} setGastos={setGastos} readOnly={!canAccess("inventario_editar", currentUser.role)} />}
       {view === "venta"                                       && <VentaView {...viewProps} />}
       {view === "reporte"    && canAccess("reporte", currentUser.role) && <ReporteView sales={sales} products={products} citas={citas} profile={profile} />}
       {view === "contabilidad" && canAccess("contabilidad", currentUser.role) && <ContabilidadView sales={sales} products={products} gastos={gastos} setGastos={setGastos} proveedores={proveedores} setProveedores={setProveedores} fiados={fiados} showToast={showToast} />}
