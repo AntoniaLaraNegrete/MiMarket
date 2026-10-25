@@ -328,6 +328,7 @@ function imprimirComprobante(sale, profile) {
       <div class="divider">${items}</div>
       <div class="divider row bold"><span>TOTAL</span><span>${formatCLP(sale.total)}</span></div>
       <div class="muted">Pago: ${PAYMENT_LABEL[sale.paymentType]||sale.paymentType}</div>
+      ${sale.paymentType==="mixto" ? `<div class="muted row"><span>&nbsp;&nbsp;Efectivo</span><span>${formatCLP(sale.mixEfectivo||0)}</span></div><div class="muted row"><span>&nbsp;&nbsp;Tarjeta/otro</span><span>${formatCLP(sale.mixOtro||0)}</span></div>` : ""}
       <div class="center muted" style="margin-top:16px;">¡Gracias por su compra! 🌸</div>
     </body></html>
   `);
@@ -365,7 +366,8 @@ function imprimirCorteDelDia(data, profile) {
       <div class="divider">
         ${row("Ventas en efectivo +", formatCLP(data.cashSales))}
         ${row("Abonos de clientes +", formatCLP(data.abonos))}
-        ${row("Pagos a proveedores -", formatCLP(data.gastosEfectivo))}
+        ${row("Gastos en efectivo -", formatCLP(data.gastosEfectivo))}
+        ${row("Pagos a proveedores -", formatCLP(data.pagosProveedor||0))}
         ${row("Retiros de efectivo -", formatCLP(data.retiros||0))}
         <div class="divider bold">${row("Total esperado en caja", formatCLP(data.expected))}</div>
       </div>
@@ -414,6 +416,21 @@ async function hashPin(pin) {
   const enc = new TextEncoder().encode("mimarket_pin_" + pin);
   const digest = await crypto.subtle.digest("SHA-256", enc);
   return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, "0")).join("");
+}
+
+// Registra (o aumenta) la deuda con un proveedor cuando una compra se hace "a crédito"
+// (mercadería/gasto ya recibido, aún no pagado). El gasto siempre se registra al momento
+// de la compra; esto solo lleva la cuenta de cuánto se le debe a ese proveedor.
+function registrarDeudaProveedor(proveedores, setProveedores, nombreProveedor, monto, descripcion) {
+  const nombre = (nombreProveedor||"").trim();
+  if (!nombre || !monto) return;
+  const existente = proveedores.find(p => p.nombre.toLowerCase() === nombre.toLowerCase());
+  const cargo = { fecha: todayISO(), type:"cargo", amount: monto, note: descripcion };
+  if (existente) {
+    setProveedores(proveedores.map(p => p.id===existente.id ? { ...p, balance:(p.balance||0)+monto, history:[cargo,...(p.history||[])] } : p));
+  } else {
+    setProveedores([{ id: uid("pv"), nombre, rut:"", telefono:"", email:"", condiciones:"", balance: monto, history:[cargo] }, ...proveedores]);
+  }
 }
 
 function buildSeedSales(products) {
@@ -893,7 +910,7 @@ function NotificationBell({ products, fiados, sales, pedidos, citas, cajaState, 
         )}
       </button>
       {open && (
-        <div className="absolute right-0 top-11 w-80 rounded-2xl shadow-xl z-50 overflow-hidden"
+        <div className="fixed sm:absolute left-3 right-3 sm:left-0 sm:right-auto top-16 sm:top-11 sm:w-80 rounded-2xl shadow-xl z-50 overflow-hidden"
           style={{ background: "#fff", border: `1px solid ${C.border}` }}>
           <div className="px-4 py-3 flex items-center justify-between" style={{ borderBottom: `1px solid ${C.border}` }}>
             <span className="font-bold text-sm" style={{ fontFamily: FONT_DISPLAY, color: C.text }}>Notificaciones</span>
@@ -938,7 +955,7 @@ const NAV_ITEMS = [
   { id:"pedidos",       label:"Pedidos",        icon:Truck,           roles:["admin","vendedor"], module:"pedidos", permKey:"pedidos" },
   { id:"agenda",        label:"Agenda",         icon:Clock,           roles:["admin","vendedor"], module:"agenda", permKey:"agenda" },
   { id:"fiados",        label:"Fiados",         icon:Coins,           roles:["admin","vendedor"], permKey:"fiados" },
-  { id:"boletas",       label:"Boletas",        icon:Receipt,         roles:["admin","vendedor"], permKey:"boletas" },
+  { id:"boletas",       label:"Boletas",        icon:Receipt,         roles:["admin","vendedor"], permKey:"boletas_ver" },
   { id:"configurar",    label:"Configurar",     icon:Settings,        roles:["admin"] },
   { id:"tutoriales",    label:"Tutoriales",     icon:PlayCircle,      roles:["admin","vendedor"] },
   { id:"ecommerce",     label:"Ecommerce",      icon:Globe,           roles:["admin"] },
@@ -952,11 +969,12 @@ const VENDOR_PERMS = [
   { id:"pedidos", label:"Pedidos", hint:"Ver y registrar pedidos de clientes" },
   { id:"agenda", label:"Agenda", hint:"Ver y agendar citas de servicios" },
   { id:"fiados", label:"Fiados", hint:"Ver y registrar fiados de clientes" },
-  { id:"boletas", label:"Boletas", hint:"Ver historial de boletas emitidas" },
+  { id:"boletas_ver", label:"Ver Boletas", hint:"Puede ver el historial de boletas emitidas" },
+  { id:"boletas_devolver", label:"Devolver Boletas", hint:"Puede procesar devoluciones de boletas (si no, solo puede ver)" },
   { id:"reporte", label:"Reportes", hint:"Ver gráficos y estadísticas de ventas" },
   { id:"contabilidad", label:"Contabilidad", hint:"Ver ingresos, gastos y balance del negocio" },
 ];
-const DEFAULT_VENDOR_PERMS = { inventario_ver:true, inventario_editar:false, caja:true, pedidos:true, agenda:true, fiados:true, boletas:true, reporte:false, contabilidad:false };
+const DEFAULT_VENDOR_PERMS = { inventario_ver:true, inventario_editar:false, caja:true, pedidos:true, agenda:true, fiados:true, boletas_ver:true, boletas_devolver:false, reporte:false, contabilidad:false };
 
 function useIsTablet() {
   const [isTablet, setIsTablet] = useState(false);
@@ -1179,7 +1197,7 @@ function MetaGoalSection({ profile, setProfile, sales, showToast }) {
   const meta = profile.meta;
   const progreso = useMemo(()=>{
     if (!meta) return { logrado:0, pct:0, faltante:0 };
-    const logrado = sales.filter(s=>s.datetime >= meta.createdAt).reduce((sum,s)=>sum+s.total,0);
+    const logrado = sales.filter(s=>s.datetime >= meta.createdAt && !s.devuelta).reduce((sum,s)=>sum+s.total,0);
     const pct = Math.max(0, Math.min(100, Math.round((logrado/meta.amount)*100)));
     const faltante = Math.max(0, meta.amount - logrado);
     return { logrado, pct, faltante };
@@ -1235,15 +1253,20 @@ function MetaGoalSection({ profile, setProfile, sales, showToast }) {
 
 function PanelView({ products, sales, fiados, pedidos, profile, setProfile, setView, currentUser }) {
   const today = todayISO();
-  const salesToday = sales.filter(s=>s.datetime.slice(0,10)===today);
+  const salesToday = sales.filter(s=>s.datetime.slice(0,10)===today&&!s.devuelta);
   const totalFiado = fiados.filter(f=>f.balance>0).reduce((s,f)=>s+f.balance,0);
   const lowStock   = products.filter(p=>p.stock<=5);
   const atrasados  = (pedidos||[]).filter(p=>p.fechaEntrega<today && p.estado!=="entregado");
 
   const sumBy = (types) => salesToday.filter(s=>types.includes(s.paymentType)).reduce((s,x)=>s+x.total,0);
+  // El pago mixto reparte su monto entre Efectivo y Tarjeta (así se cobra en el checkout) —
+  // si no, esa plata no aparecía en ninguna de las tarjetas de abajo.
+  const mixtasHoy = salesToday.filter(s=>s.paymentType==="mixto");
+  const sumMixEfectivo = mixtasHoy.reduce((s,x)=>s+(x.mixEfectivo||0),0);
+  const sumMixOtro = mixtasHoy.reduce((s,x)=>s+(x.mixOtro||0),0);
   const paymentStats = [
-    { label:"Ventas Efectivo",      value:sumBy(["efectivo"]),           icon:Banknote,       color:C.success },
-    { label:"Ventas Tarjeta",       value:sumBy(["debito","credito"]),   icon:CreditCard,     color:C.teal    },
+    { label:"Ventas Efectivo",      value:sumBy(["efectivo"])+sumMixEfectivo,  icon:Banknote,       color:C.success },
+    { label:"Ventas Tarjeta",       value:sumBy(["debito","credito"])+sumMixOtro, icon:CreditCard,  color:C.teal    },
     { label:"Ventas Transferencia", value:sumBy(["transferencia"]),      icon:ArrowLeftRight, color:C.amber   },
     { label:"Fiados Pendientes",    value:totalFiado,                    icon:Coins,          color:C.navy    },
   ];
@@ -1482,7 +1505,7 @@ function ProductFormModal({ initial, categories, onClose, onSave }) {
   );
 }
 
-function InventarioView({ products, setProducts, showToast, profile, setProfile, gastos, setGastos, readOnly=false }) {
+function InventarioView({ products, setProducts, showToast, profile, setProfile, gastos, setGastos, proveedores, setProveedores, readOnly=false }) {
   const categories = activeCategories(profile);
   const [search, setSearch] = useState("");
   const [cat,    setCat]    = useState("Todas");
@@ -1646,8 +1669,12 @@ function InventarioView({ products, setProducts, showToast, profile, setProfile,
         <RestockModal products={products} onClose={()=>setShowRestock(false)} onConfirm={({productId, qty, unitCost, proveedor, metodoPago})=>{
           const prod = products.find(p=>p.id===productId);
           if (!prod) return;
+          const esACredito = metodoPago === "a_credito";
           setProducts(products.map(p=>p.id===productId ? {...p, stock:p.stock+qty, purchasePrice:unitCost} : p));
-          setGastos([{ id: uid("g"), fecha: todayISO(), categoria: "Mercadería", descripcion: `Reposición: ${qty} x ${prod.name}`, monto: qty*unitCost, proveedor: proveedor||"", metodoPago: metodoPago||"" }, ...gastos]);
+          setGastos([{ id: uid("g"), fecha: todayISO(), categoria: "Mercadería", descripcion: `Reposición: ${qty} x ${prod.name}`, monto: qty*unitCost, proveedor: proveedor||"", metodoPago: esACredito ? "" : (metodoPago||"") }, ...gastos]);
+          if (esACredito) {
+            registrarDeudaProveedor(proveedores, setProveedores, proveedor, qty*unitCost, `Reposición: ${qty} x ${prod.name}`);
+          }
           setShowRestock(false);
           showToast(`Stock repuesto y gasto registrado (${formatCLP(qty*unitCost)})`);
         }}/>
@@ -1787,7 +1814,7 @@ function RestockModal({ products, onClose, onConfirm }) {
           <Field label="Cantidad que compraste"><input type="number" min="1" style={inputStyle} value={qty} onChange={e=>setQty(e.target.value)} placeholder="0" /></Field>
           <Field label="Costo por unidad"><MoneyInput value={unitCost} onChange={setUnitCost} placeholder="0" /></Field>
         </div>
-        <Field label="Proveedor (opcional)"><input style={inputStyle} value={proveedor} onChange={e=>setProveedor(e.target.value)} placeholder="Nombre del proveedor" /></Field>
+        <Field label={metodoPago==="a_credito" ? "Proveedor" : "Proveedor (opcional)"}><input style={inputStyle} value={proveedor} onChange={e=>setProveedor(e.target.value)} placeholder="Nombre del proveedor" /></Field>
         <Field label="¿Cómo le pagaste? (opcional)">
           <div className="flex flex-wrap gap-2">
             {PAYMENT_METHODS.filter(m=>m.id!=="fiado"&&m.id!=="mixto").map(m=>(
@@ -1797,8 +1824,14 @@ function RestockModal({ products, onClose, onConfirm }) {
                 <m.icon size={13}/> {m.label}
               </button>
             ))}
+            <button type="button" onClick={()=>setMetodoPago(metodoPago==="a_credito"?"":"a_credito")}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold"
+              style={{border:`1.5px solid ${metodoPago==="a_credito"?C.danger:C.border}`, background:metodoPago==="a_credito"?C.danger+"15":"#fff", color:metodoPago==="a_credito"?C.danger:C.text}}>
+              <Truck size={13}/> Aún no le he pagado
+            </button>
           </div>
           {metodoPago==="efectivo" && <p className="text-[11px] mt-1.5" style={{color:C.textMuted}}>Se descontará del efectivo esperado en Caja 360° el día de hoy.</p>}
+          {metodoPago==="a_credito" && <p className="text-[11px] mt-1.5" style={{color:C.danger}}>Quedará registrado como deuda con el proveedor en Contabilidad → Proveedores.</p>}
         </Field>
         <div className="rounded-xl px-4 py-3 flex justify-between items-center" style={{background:C.cream}}>
           <span className="text-xs font-semibold" style={{color:C.textMuted}}>Total del gasto</span>
@@ -1807,7 +1840,7 @@ function RestockModal({ products, onClose, onConfirm }) {
       </div>
       <div className="flex justify-end gap-2 mt-6">
         <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
-        <Btn icon={Check} disabled={!productId||!qty||Number(qty)<=0||!unitCost} onClick={()=>onConfirm({productId, qty:Number(qty), unitCost:Number(unitCost), proveedor, metodoPago})}>Reponer y registrar gasto</Btn>
+        <Btn icon={Check} disabled={!productId||!qty||Number(qty)<=0||!unitCost||(metodoPago==="a_credito"&&!proveedor.trim())} onClick={()=>onConfirm({productId, qty:Number(qty), unitCost:Number(unitCost), proveedor, metodoPago})}>Reponer y registrar gasto</Btn>
       </div>
     </Modal>
   );
@@ -1970,8 +2003,8 @@ function CheckoutModal({ total, cartItems, fiados, onClose, onFinalize }) {
       )}
       <div className="flex justify-end gap-2 mt-6">
         <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
-        <Btn variant="outline" disabled={!canFinalize()} onClick={()=>onFinalize({method,fiadoClient:newMode?{...newC,isNew:true}:fClient,print:false})}>Finalizar</Btn>
-        <Btn icon={Receipt} disabled={!canFinalize()} onClick={()=>onFinalize({method,fiadoClient:newMode?{...newC,isNew:true}:fClient,print:true})}>Imprimir</Btn>
+        <Btn variant="outline" disabled={!canFinalize()} onClick={()=>onFinalize({method,fiadoClient:newMode?{...newC,isNew:true}:fClient,mixCash,mixCard,print:false})}>Finalizar</Btn>
+        <Btn icon={Receipt} disabled={!canFinalize()} onClick={()=>onFinalize({method,fiadoClient:newMode?{...newC,isNew:true}:fClient,mixCash,mixCard,print:true})}>Imprimir</Btn>
       </div>
     </Modal>
   );
@@ -2027,9 +2060,14 @@ function VentaView({ products, setProducts, cart, setCart, fiados, setFiados, sa
     setCart(cart.map(c=>{if(c.productId!==pid)return c;const n=c.qty+delta;if(n>p.stock){showToast("Stock insuficiente","error");return c;}return{...c,qty:n};}).filter(c=>c.qty>0));
   }
 
-  function finalizeSale({method,fiadoClient,print}){
+  function finalizeSale({method,fiadoClient,mixCash,mixCard,print}){
     const v=counters.voucher+1,b=counters.boleta+1; setCounters({voucher:v,boleta:b});
-    const sale={id:uid("s"),voucher:"V-"+v,boletaSII:b,datetime:new Date().toISOString(),vendor:"Tú",paymentType:method,items:cartItems.map(c=>({productId:c.productId,name:c.product.name,price:c.product.salePrice,qty:c.qty})),total};
+    const sale={id:uid("s"),voucher:"V-"+v,boletaSII:b,datetime:new Date().toISOString(),vendor:"Tú",paymentType:method,
+      // En pago mixto guardamos el desglose: sin esto, la plata en efectivo que sí entró a la
+      // caja en una venta mixta se perdía y no se sumaba al efectivo esperado en Caja.
+      mixEfectivo: method==="mixto" ? (Number(mixCash)||0) : undefined,
+      mixOtro: method==="mixto" ? (Number(mixCard)||0) : undefined,
+      items:cartItems.map(c=>({productId:c.productId,name:c.product.name,price:c.product.salePrice,cost:c.product.purchasePrice,qty:c.qty})),total};
     setProducts(products.map(p=>{const ic=cart.find(c=>c.productId===p.id);return ic?{...p,stock:Math.max(0,p.stock-ic.qty)}:p;}));
     if (method==="fiado"&&fiadoClient){
       if (fiadoClient.isNew) setFiados([{id:uid("f"),name:fiadoClient.name,phone:fiadoClient.phone,rut:fiadoClient.rut||"—",balance:total,history:[{date:todayISO(),type:"cargo",amount:total,note:"Venta "+sale.voucher}]},...fiados]);
@@ -2365,10 +2403,14 @@ function PedidosView({ pedidos, setPedidos, products, setProducts, sales, setSal
   function confirmarEntrega(pedido, metodo) {
     const v=counters.voucher+1, b=counters.boleta+1;
     setCounters({voucher:v, boleta:b});
+    const prodPedido = pedido.tipo==="existente" ? products.find(x=>x.id===pedido.productoId) : null;
+    const costoUnitario = pedido.tipo==="existente"
+      ? (prodPedido ? prodPedido.purchasePrice : undefined)
+      : (pedido.costo!==undefined && pedido.costo!==null ? pedido.costo/(pedido.cantidad||1) : undefined);
     const sale = {
       id: uid("s"), voucher:"V-"+v, boletaSII:b, datetime:new Date().toISOString(), vendor:"Pedido",
       paymentType: metodo,
-      items:[{ productId: pedido.tipo==="existente"?pedido.productoId:null, name:pedido.detalle, price:pedido.precio/(pedido.cantidad||1), qty:pedido.cantidad||1 }],
+      items:[{ productId: pedido.tipo==="existente"?pedido.productoId:null, name:pedido.detalle, price:pedido.precio/(pedido.cantidad||1), cost: costoUnitario, qty:pedido.cantidad||1 }],
       total: pedido.precio,
     };
     setSales([sale, ...sales]);
@@ -2706,52 +2748,182 @@ function addDays(date, n) { const d = new Date(date); d.setDate(d.getDate() + n)
 function toISO(d) { return d.toISOString().slice(0, 10); }
 const DIAS_SEMANA = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
 
-function CitaFormModal({ initial, servicios, users, fecha, onClose, onSave }) {
+function CitaFormModal({ initial, servicios, users, fecha, onClose, onSave, onCobrar, onNoVino, onDeshacerNoVino, onDeshacerCobro }) {
   const [form, setForm] = useState(initial || { servicioId: servicios[0]?.id || "", cliente: "", telefono: "", fecha: fecha || todayISO(), hora: "10:00", profesional: users?.[0]?.name || "", notas: "" });
+  const [modo, setModo] = useState("form"); // "form" | "cobro" | "novino" | "deshacerCobro"
+  const [metodo, setMetodo] = useState("");
   const servicioSel = servicios.find(s => s.id === form.servicioId);
+  const puedeGestionar = !!initial && (!initial.estado || initial.estado === "reservada");
+  const bloqueada = initial?.estado === "completada" || initial?.estado === "no_asistio" || initial?.estado === "devuelta";
+  const metodosPago = PAYMENT_METHODS.filter(m => m.id !== "fiado" && m.id !== "mixto");
+
+  if (modo === "cobro") {
+    return (
+      <Modal title="Confirmar cobro" onClose={onClose} width={400}>
+        <p className="text-sm mb-4" style={{ color: C.textMuted }}>Esto va a sumarse a tu Caja y Contabilidad como una venta de {formatCLP(initial.precio)} por "{initial.servicioNombre}". ¿Cómo pagó el cliente?</p>
+        <div className="grid grid-cols-2 gap-2">
+          {metodosPago.map(m => (
+            <button key={m.id} onClick={() => setMetodo(m.id)} className="flex items-center gap-2 p-3 rounded-xl text-sm font-semibold"
+              style={{ border: `1.5px solid ${metodo === m.id ? m.color : C.border}`, background: metodo === m.id ? m.color + "15" : "#fff", color: metodo === m.id ? m.color : C.text }}>
+              <m.icon size={16} /> {m.label}
+            </button>
+          ))}
+        </div>
+        <div className="flex justify-end gap-2 mt-6">
+          <Btn variant="ghost" onClick={() => setModo("form")}>Volver</Btn>
+          <Btn icon={Check} disabled={!metodo} onClick={() => onCobrar(initial, metodo)}>Confirmar cobro</Btn>
+        </div>
+      </Modal>
+    );
+  }
+  if (modo === "deshacerCobro") {
+    return (
+      <Modal title="Anular este cobro" onClose={onClose} width={380}>
+        <div className="flex flex-col items-center text-center gap-3 py-2">
+          <div className="w-12 h-12 rounded-full flex items-center justify-center" style={{ background: C.dangerLight }}><RotateCcw size={20} color={C.danger} /></div>
+          <p className="text-sm" style={{ color: C.text }}>Esto anula la venta de <strong>{formatCLP(initial.precio)}</strong> por "{initial.servicioNombre}" y la saca de tu Caja y Contabilidad. La boleta no se borra (queda marcada como devuelta, para no perder el orden de boletas emitidas) y la cita vuelve a quedar agendada para que puedas cobrarla de nuevo si corresponde.</p>
+          <div className="flex gap-2 w-full mt-2">
+            <Btn full variant="ghost" onClick={() => setModo("form")}>Volver</Btn>
+            <Btn full variant="dark" onClick={() => onDeshacerCobro(initial)}>Sí, anular cobro</Btn>
+          </div>
+        </div>
+      </Modal>
+    );
+  }
+  if (modo === "novino") {
+    return (
+      <Modal title="Cliente no vino" onClose={onClose} width={380}>
+        <div className="flex flex-col items-center text-center gap-3 py-2">
+          <div className="w-12 h-12 rounded-full flex items-center justify-center" style={{ background: C.dangerLight }}><AlertTriangle size={20} color={C.danger} /></div>
+          <p className="text-sm" style={{ color: C.text }}>¿Confirmas que <strong>{initial.cliente}</strong> no vino a su cita de <strong>{initial.servicioNombre}</strong>? No se va a registrar como venta ni va a afectar tu Contabilidad.</p>
+          <div className="flex gap-2 w-full mt-2">
+            <Btn full variant="ghost" onClick={() => setModo("form")}>Volver</Btn>
+            <Btn full variant="dark" onClick={() => onNoVino(initial)}>Sí, no vino</Btn>
+          </div>
+        </div>
+      </Modal>
+    );
+  }
+
   return (
     <Modal title={initial ? "Editar cita" : "Nueva cita"} onClose={onClose} width={420}>
+      {initial?.estado === "completada" && (
+        <div className="flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl mb-4 flex-wrap" style={{ background: C.successLight }}>
+          <div className="flex items-center gap-2">
+            <CheckCircle2 size={16} color={C.success} />
+            <p className="text-xs font-semibold" style={{ color: C.success }}>Realizada y cobrada — ya está en Caja y Contabilidad</p>
+          </div>
+          <button onClick={() => setModo("deshacerCobro")} className="text-xs font-semibold underline" style={{ color: C.success }}>¿Te equivocaste? Anular</button>
+        </div>
+      )}
+      {initial?.estado === "no_asistio" && (
+        <div className="flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl mb-4 flex-wrap" style={{ background: C.dangerLight }}>
+          <div className="flex items-center gap-2">
+            <X size={16} color={C.danger} />
+            <p className="text-xs font-semibold" style={{ color: C.danger }}>Cliente no vino — no se contabiliza como venta</p>
+          </div>
+          <button onClick={() => onDeshacerNoVino(initial)} className="text-xs font-semibold underline" style={{ color: C.danger }}>¿Te equivocaste? El cliente sí vino</button>
+        </div>
+      )}
+      {initial?.estado === "devuelta" && (
+        <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl mb-4" style={{ background: C.dangerLight }}>
+          <RotateCcw size={16} color={C.danger} />
+          <p className="text-xs font-semibold" style={{ color: C.danger }}>La boleta de esta cita fue devuelta — ya no se contabiliza como venta</p>
+        </div>
+      )}
+      {bloqueada && (
+        <div className="flex items-center gap-2 px-3 py-2 rounded-xl mb-4" style={{ background: C.cream }}>
+          <p className="text-xs" style={{ color: C.textMuted }}>Esta cita ya quedó cerrada, por eso no se puede editar — así evitamos que quede descuadrada con lo que ya se registró en Contabilidad.</p>
+        </div>
+      )}
       <div className="flex flex-col gap-4">
         <Field label="Servicio">
-          <select style={inputStyle} value={form.servicioId} onChange={e => setForm({ ...form, servicioId: e.target.value })}>
+          <select disabled={bloqueada} style={inputStyle} value={form.servicioId} onChange={e => setForm({ ...form, servicioId: e.target.value })}>
             {servicios.map(s => <option key={s.id} value={s.id}>{s.nombre} · {s.duracionMin}min · {formatCLP(s.precio)}</option>)}
           </select>
         </Field>
         <div className="grid grid-cols-2 gap-4">
-          <Field label="Fecha"><input type="date" style={inputStyle} value={form.fecha} onChange={e => setForm({ ...form, fecha: e.target.value })} /></Field>
-          <Field label="Hora"><input type="time" style={inputStyle} value={form.hora} onChange={e => setForm({ ...form, hora: e.target.value })} /></Field>
+          <Field label="Fecha"><input disabled={bloqueada} type="date" style={inputStyle} value={form.fecha} onChange={e => setForm({ ...form, fecha: e.target.value })} /></Field>
+          <Field label="Hora"><input disabled={bloqueada} type="time" style={inputStyle} value={form.hora} onChange={e => setForm({ ...form, hora: e.target.value })} /></Field>
         </div>
-        <Field label="Nombre del cliente"><input style={inputStyle} value={form.cliente} onChange={e => setForm({ ...form, cliente: e.target.value })} placeholder="Ej: Camila Rojas" /></Field>
-        <Field label="Teléfono (opcional)"><input style={inputStyle} value={form.telefono} onChange={e => setForm({ ...form, telefono: e.target.value })} placeholder="+56 9..." /></Field>
+        <Field label="Nombre del cliente"><input disabled={bloqueada} style={inputStyle} value={form.cliente} onChange={e => setForm({ ...form, cliente: e.target.value })} placeholder="Ej: Camila Rojas" /></Field>
+        <Field label="Teléfono (opcional)"><input disabled={bloqueada} style={inputStyle} value={form.telefono} onChange={e => setForm({ ...form, telefono: e.target.value })} placeholder="+56 9..." /></Field>
         {users?.length > 0 && (
           <Field label="Profesional (opcional)">
-            <select style={inputStyle} value={form.profesional} onChange={e => setForm({ ...form, profesional: e.target.value })}>
+            <select disabled={bloqueada} style={inputStyle} value={form.profesional} onChange={e => setForm({ ...form, profesional: e.target.value })}>
               <option value="">Sin asignar</option>
               {users.map(u => <option key={u.id} value={u.name}>{u.name}</option>)}
             </select>
           </Field>
         )}
-        <Field label="Notas (opcional)"><input style={inputStyle} value={form.notas} onChange={e => setForm({ ...form, notas: e.target.value })} placeholder="Alergias, preferencias, etc." /></Field>
+        <Field label="Notas (opcional)"><input disabled={bloqueada} style={inputStyle} value={form.notas} onChange={e => setForm({ ...form, notas: e.target.value })} placeholder="Alergias, preferencias, etc." /></Field>
       </div>
+      {puedeGestionar && (
+        <div className="flex gap-2 mt-4 pt-4" style={{ borderTop: `1px solid ${C.border}` }}>
+          <Btn full variant="outline" icon={X} onClick={() => setModo("novino")}>Cliente no vino</Btn>
+          <Btn full icon={Check} onClick={() => setModo("cobro")}>Realizada y cobrada</Btn>
+        </div>
+      )}
       <div className="flex justify-end gap-2 mt-6">
-        <Btn variant="ghost" onClick={onClose}>Cancelar</Btn>
-        <Btn icon={Check} disabled={!form.cliente.trim() || !servicioSel} onClick={() => onSave({
+        <Btn variant="ghost" onClick={onClose}>{bloqueada ? "Cerrar" : "Cancelar"}</Btn>
+        {!bloqueada && <Btn icon={Check} disabled={!form.cliente.trim() || !servicioSel} onClick={() => onSave({
           ...form,
           servicioNombre: servicioSel.nombre, categoria: servicioSel.categoria,
           duracionMin: servicioSel.duracionMin, precio: servicioSel.precio,
           estado: initial?.estado || "reservada",
-        })}>Guardar cita</Btn>
+        })}>Guardar cita</Btn>}
       </div>
     </Modal>
   );
 }
 
-function AgendaTab({ citas, setCitas, servicios, users, showToast }) {
+function AgendaTab({ citas, setCitas, servicios, users, showToast, sales, setSales, counters, setCounters }) {
   const [weekStart, setWeekStart] = useState(() => startOfWeek(todayISO()));
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
   const [formFecha, setFormFecha] = useState(todayISO());
   const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
+
+  function cobrarCita(cita, metodo) {
+    const v = counters.voucher + 1, b = counters.boleta + 1;
+    setCounters({ voucher: v, boleta: b });
+    const srv = servicios.find(s => s.id === cita.servicioId);
+    const sale = {
+      id: uid("s"), voucher: "V-" + v, boletaSII: b, datetime: new Date().toISOString(),
+      vendor: cita.profesional || "Servicio", paymentType: metodo, citaId: cita.id,
+      items: [{ productId: null, name: cita.servicioNombre, price: cita.precio, cost: srv && srv.costoEstimado !== undefined ? srv.costoEstimado : undefined, qty: 1 }],
+      total: cita.precio,
+    };
+    setSales([sale, ...sales]);
+    setCitas(citas.map(c => c.id === cita.id ? { ...c, estado: "completada", ventaId: sale.id } : c));
+    setShowForm(false);
+    showToast("Cita cobrada — se sumó a Caja y Contabilidad");
+  }
+
+  function marcarNoVino(cita) {
+    setCitas(citas.map(c => c.id === cita.id ? { ...c, estado: "no_asistio" } : c));
+    setShowForm(false);
+    showToast("Cita marcada como 'cliente no vino' — no se contabiliza");
+  }
+
+  function deshacerNoVino(cita) {
+    setCitas(citas.map(c => c.id === cita.id ? { ...c, estado: "reservada" } : c));
+    setShowForm(false);
+    showToast("Se deshizo — la cita vuelve a estar agendada");
+  }
+
+  // Anula una cita ya cobrada por un error propio (método de pago equivocado, se cobró antes
+  // de tiempo, etc.). La boleta queda devuelta para siempre (así debe ser: una boleta emitida
+  // no se borra, se anula), pero la CITA vuelve a "reservada" para poder cobrarla de nuevo bien.
+  function deshacerCobro(cita) {
+    const sale = sales.find(s => s.id === cita.ventaId);
+    if (sale) {
+      setSales(sales.map(s => s.id === sale.id ? { ...s, devuelta: true, devueltaFecha: todayISO() } : s));
+    }
+    setCitas(citas.map(c => c.id === cita.id ? { ...c, estado: "reservada", ventaId: undefined } : c));
+    setShowForm(false);
+    showToast(sale ? "Cobro anulado — la boleta " + sale.voucher + " quedó devuelta y la cita volvió a agendada" : "Cita vuelta a agendada");
+  }
 
   return (
     <div>
@@ -2783,10 +2955,14 @@ function AgendaTab({ citas, setCitas, servicios, users, showToast }) {
               <div className="flex flex-col gap-1.5">
                 {citasDia.map(c => {
                   const cs = styleForCategory(c.categoria);
+                  const noAsistio = c.estado === "no_asistio" || c.estado === "devuelta";
+                  const completada = c.estado === "completada";
                   return (
-                    <button key={c.id} onClick={() => { setEditing(c); setShowForm(true); }} className="text-left p-2 rounded-lg" style={{ background: cs.bg }}>
-                      <div className="text-[11px] font-bold" style={{ color: cs.fg }}>{c.hora} · {c.servicioNombre}</div>
-                      <div className="text-[10px]" style={{ color: cs.fg }}>{c.cliente}</div>
+                    <button key={c.id} onClick={() => { setEditing(c); setShowForm(true); }} className="text-left p-2 rounded-lg" style={{ background: noAsistio ? C.cream : cs.bg, opacity: noAsistio ? 0.65 : 1 }}>
+                      <div className="text-[11px] font-bold flex items-center gap-1" style={{ color: noAsistio ? C.textMuted : cs.fg, textDecoration: noAsistio ? "line-through" : "none" }}>
+                        {completada && <CheckCircle2 size={11} />}{c.hora} · {c.servicioNombre}
+                      </div>
+                      <div className="text-[10px]" style={{ color: noAsistio ? C.textMuted : cs.fg }}>{c.cliente}</div>
                     </button>
                   );
                 })}
@@ -2803,7 +2979,12 @@ function AgendaTab({ citas, setCitas, servicios, users, showToast }) {
           else setCitas([{ id: uid("cita"), ...data }, ...citas]);
           showToast(editing ? "Cita actualizada" : "Cita agendada");
           setShowForm(false);
-        }} />
+        }}
+        onCobrar={cobrarCita}
+        onNoVino={marcarNoVino}
+        onDeshacerNoVino={deshacerNoVino}
+        onDeshacerCobro={deshacerCobro}
+        />
       )}
     </div>
   );
@@ -2812,7 +2993,9 @@ function AgendaTab({ citas, setCitas, servicios, users, showToast }) {
 function CierreMesTab({ citas, servicios }) {
   const [mes, setMes] = useState(todayISO().slice(0, 7)); // YYYY-MM
   const citasMes = citas.filter(c => c.fecha.startsWith(mes));
-  const completadas = citasMes.filter(c => c.estado === "completada" || c.estado === "reservada");
+  const completadas = citasMes.filter(c => c.estado === "completada");
+  const pendientesCount = citasMes.filter(c => c.estado === "reservada" || !c.estado).length;
+  const noAsistioCount = citasMes.filter(c => c.estado === "no_asistio").length;
   const totalFacturado = completadas.reduce((s, c) => s + (c.precio || 0), 0);
   const horasTrabajadas = completadas.reduce((s, c) => s + (c.duracionMin || 0), 0) / 60;
   const porServicio = {};
@@ -2829,6 +3012,15 @@ function CierreMesTab({ citas, servicios }) {
     <div className="flex flex-col gap-5">
       <Field label="Mes a revisar"><input type="month" style={{ ...inputStyle, maxWidth: 200 }} value={mes} onChange={e => setMes(e.target.value)} /></Field>
 
+      <div className="flex items-start gap-2 px-4 py-3 rounded-xl" style={{ background: C.cream }}>
+        <Clock size={15} color={C.textMuted} style={{ marginTop: 1 }} />
+        <p className="text-xs" style={{ color: C.textMuted }}>
+          Estos números solo cuentan citas que marcaste como <strong>"realizada y cobrada"</strong> — así tu Contabilidad y Caja coinciden con el dinero real que entró.
+          {pendientesCount > 0 && ` Tienes ${pendientesCount} cita${pendientesCount > 1 ? "s" : ""} agendada${pendientesCount > 1 ? "s" : ""} este mes que aún no has marcado.`}
+          {noAsistioCount > 0 && ` ${noAsistioCount} cita${noAsistioCount > 1 ? "s" : ""} quedaron marcadas como "cliente no vino" y no se contabilizan.`}
+        </p>
+      </div>
+
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         <Card style={{ padding: 18 }}>
           <div className="text-xs font-semibold mb-1" style={{ color: C.textMuted }}>Total facturado</div>
@@ -2839,7 +3031,7 @@ function CierreMesTab({ citas, servicios }) {
           <div className="text-xl font-bold" style={{ fontFamily: FONT_MONO, color: gananciaTotal>=0?C.success:C.danger }}>{formatCLP(gananciaTotal)}</div>
         </Card>
         <Card style={{ padding: 18 }}>
-          <div className="text-xs font-semibold mb-1" style={{ color: C.textMuted }}>Citas del mes</div>
+          <div className="text-xs font-semibold mb-1" style={{ color: C.textMuted }}>Citas cobradas</div>
           <div className="text-xl font-bold" style={{ fontFamily: FONT_MONO, color: C.text }}>{completadas.length}</div>
         </Card>
         <Card style={{ padding: 18 }}>
@@ -2870,7 +3062,7 @@ function CierreMesTab({ citas, servicios }) {
   );
 }
 
-function AgendaView({ profile, setProfile, servicios, setServicios, citas, setCitas, users, showToast }) {
+function AgendaView({ profile, setProfile, servicios, setServicios, citas, setCitas, users, showToast, sales, setSales, counters, setCounters }) {
   const [tab, setTab] = useState("agenda");
   const TABS = [
     { id: "agenda", label: "Agenda", icon: Clock },
@@ -2888,7 +3080,7 @@ function AgendaView({ profile, setProfile, servicios, setServicios, citas, setCi
           </button>
         ))}
       </div>
-      {tab === "agenda" && <AgendaTab citas={citas} setCitas={setCitas} servicios={servicios} users={users} showToast={showToast} />}
+      {tab === "agenda" && <AgendaTab citas={citas} setCitas={setCitas} servicios={servicios} users={users} showToast={showToast} sales={sales} setSales={setSales} counters={counters} setCounters={setCounters} />}
       {tab === "servicios" && <ServiciosTab profile={profile} setProfile={setProfile} servicios={servicios} setServicios={setServicios} showToast={showToast} />}
       {tab === "cierre" && <CierreMesTab citas={citas} servicios={servicios} />}
     </div>
@@ -2961,7 +3153,7 @@ function SaleDetailModal({ sale, profile, onClose }) {
   );
 }
 
-function DetalleBoletaView({ sales, setSales, setProducts, products, profile, showToast }) {
+function DetalleBoletaView({ sales, setSales, setProducts, products, fiados, setFiados, citas, setCitas, profile, showToast, canDevolver=true }) {
   const [from,setFrom]=useState(daysAgoISO(30));
   const [to,setTo]=useState(todayISO());
   const [sel,setSel]=useState(null);
@@ -2974,10 +3166,39 @@ function DetalleBoletaView({ sales, setSales, setProducts, products, profile, sh
       const item = (sale.items||[]).find(it=>it.productId===p.id);
       return item ? {...p, stock: p.stock+item.qty} : p;
     }));
-    // Mark sale as devuelta
+    // Si la venta fue al fiado, hay que revertir también la deuda — si no, el cliente
+    // queda debiendo un producto que ya devolvió.
+    let fiadoAjustado = false;
+    if (sale.paymentType === "fiado" && fiados && setFiados) {
+      const notaBuscada = "Venta " + sale.voucher;
+      const afectado = fiados.find(f => (f.history||[]).some(h => h.type==="cargo" && h.note===notaBuscada));
+      if (afectado) {
+        fiadoAjustado = true;
+        setFiados(fiados.map(f => f.id === afectado.id ? {
+          ...f,
+          balance: Math.max(0, f.balance - sale.total),
+          history: [{ date: todayISO(), type: "abono", amount: sale.total, note: "Devolución " + sale.voucher, metodo: "devolucion" }, ...(f.history||[])],
+        } : f));
+      }
+    }
+    // Si la venta vino de una cita de Agenda (servicio), hay que devolver la cita a un estado
+    // "devuelta" — si no, la cita queda marcada como "cobrada" aunque la boleta ya se anuló.
+    let citaAjustada = false;
+    if (sale.citaId && citas && setCitas) {
+      const citaAfectada = citas.find(c => c.id === sale.citaId);
+      if (citaAfectada) {
+        citaAjustada = true;
+        setCitas(citas.map(c => c.id === sale.citaId ? { ...c, estado: "devuelta" } : c));
+      }
+    }
+    // Mark sale as devuelta (deja de contar como venta en Contabilidad, Caja y reportes)
     setSales(sales.map(s=>s.id===sale.id?{...s,devuelta:true,devueltaFecha:todayISO()}:s));
     setDevolucion(null);
-    showToast("Devolución procesada — stock repuesto");
+    showToast(
+      fiadoAjustado ? "Devolución procesada — stock repuesto y deuda del fiado ajustada"
+      : citaAjustada ? "Devolución procesada — la cita en Agenda quedó marcada como devuelta"
+      : "Devolución procesada — stock repuesto"
+    );
   }
 
   return (
@@ -3009,7 +3230,7 @@ function DetalleBoletaView({ sales, setSales, setProducts, products, profile, sh
                   <td className="px-4 py-3 text-right">
                     <div className="flex gap-1 justify-end">
                       <Btn size="sm" variant="outline" onClick={()=>setSel(s)}>Ver</Btn>
-                      {!s.devuelta && <Btn size="sm" variant="danger" icon={RotateCcw} onClick={()=>setDevolucion(s)}>Devolver</Btn>}
+                      {!s.devuelta && canDevolver && <Btn size="sm" variant="danger" icon={RotateCcw} onClick={()=>setDevolucion(s)}>Devolver</Btn>}
                     </div>
                   </td>
                 </tr>
@@ -3043,14 +3264,14 @@ function DetalleBoletaView({ sales, setSales, setProducts, products, profile, sh
 function ReporteView({ sales, products, citas, profile }) {
   const [from,setFrom]=useState(daysAgoISO(13));
   const [to,setTo]=useState(todayISO());
-  const filtered=sales.filter(s=>{const d=s.datetime.slice(0,10);return d>=from&&d<=to;});
+  const filtered=sales.filter(s=>{const d=s.datetime.slice(0,10);return d>=from&&d<=to&&!s.devuelta;});
   const total=filtered.reduce((s,x)=>s+x.total,0);
   const avg=filtered.length?total/filtered.length:0;
   const chart=useMemo(()=>{ const m={}; filtered.forEach(s=>{const d=s.datetime.slice(0,10);m[d]=(m[d]||0)+s.total;}); return Object.keys(m).sort().map(d=>({date:d.slice(5),total:m[d]})); },[filtered]);
   const porProducto=useMemo(()=>{ const m={}; filtered.forEach(s=>(s.items||[]).forEach(it=>{ if(!m[it.name]) m[it.name]={qty:0,total:0,productId:it.productId}; m[it.name].qty+=it.qty; m[it.name].total+=it.price*it.qty; })); return Object.entries(m).map(([name,v])=>({name,...v})).sort((a,b)=>b.qty-a.qty); },[filtered]);
   const porServicio=useMemo(()=>{
     if (!profile?.modules?.includes("agenda")) return null;
-    const citasRango=(citas||[]).filter(c=>c.fecha>=from&&c.fecha<=to&&c.estado!=="cancelada");
+    const citasRango=(citas||[]).filter(c=>c.fecha>=from&&c.fecha<=to&&c.estado==="completada");
     const m={}; citasRango.forEach(c=>{ if(!m[c.servicioNombre]) m[c.servicioNombre]={qty:0,total:0}; m[c.servicioNombre].qty+=1; m[c.servicioNombre].total+=c.precio||0; });
     return Object.entries(m).map(([name,v])=>({name,...v})).sort((a,b)=>b.qty-a.qty);
   },[citas,profile,from,to]);
@@ -3111,9 +3332,9 @@ function ReporteView({ sales, products, citas, profile }) {
       {porServicio && (
         <Card style={{overflow:"hidden", marginTop:20}}>
           <div className="px-5 py-4" style={{borderBottom:`1px solid ${C.border}`}}>
-            <h3 className="text-sm font-bold" style={{fontFamily:FONT_DISPLAY,color:C.text}}>Ventas por servicio</h3>
+            <h3 className="text-sm font-bold" style={{fontFamily:FONT_DISPLAY,color:C.text}}>Ventas por servicio (citas realizadas y cobradas)</h3>
           </div>
-          {porServicio.length===0?<div className="p-6"><EmptyState icon={Clock} title="Sin citas en este rango"/></div>:(
+          {porServicio.length===0?<div className="p-6"><EmptyState icon={Clock} title="Sin citas cobradas en este rango" subtitle="Las citas agendadas que aún no marcaste como 'realizada y cobrada' no aparecen aquí"/></div>:(
             <div className="max-h-96 overflow-y-auto">
               <table className="w-full text-sm">
                 <thead><tr style={{background:C.cream}}>{["Servicio","Citas","Total vendido"].map(h=><th key={h} className="text-left px-4 py-2.5 font-semibold text-xs sticky top-0" style={{color:C.textMuted,background:C.cream}}>{h}</th>)}</tr></thead>
@@ -3134,7 +3355,7 @@ function ReporteView({ sales, products, citas, profile }) {
 }
 
 /* ============================== CAJA ============================== */
-function CajaView({ sales, fiados, gastos, cajaState, setCajaState, showToast, currentUser, profile }) {
+function CajaView({ sales, fiados, gastos, proveedores, cajaState, setCajaState, showToast, currentUser, profile }) {
   const [closeModal,setCloseModal]=useState(false);
   const [openModal,setOpenModal]=useState(false);
   const [editAperturaModal,setEditAperturaModal]=useState(false);
@@ -3145,13 +3366,17 @@ function CajaView({ sales, fiados, gastos, cajaState, setCajaState, showToast, c
   const turnos = cajaState.turnos || [];
   const [filtroFecha, setFiltroFecha] = useState("");
   const turnosFiltrados = turnos.filter(t => !filtroFecha || t.apertura.slice(0,10)===filtroFecha);
-  const salesToday=sales.filter(s=>s.datetime.slice(0,10)===today);
-  const cashSales=salesToday.filter(s=>s.paymentType==="efectivo").reduce((s,x)=>s+x.total,0);
+  const salesToday=sales.filter(s=>s.datetime.slice(0,10)===today&&!s.devuelta);
+  // Incluye la parte en efectivo de ventas con pago mixto — si no, esa plata entra físicamente
+  // a la caja pero el sistema nunca la suma al efectivo esperado.
+  const cashSales=salesToday.filter(s=>s.paymentType==="efectivo").reduce((s,x)=>s+x.total,0)
+    + salesToday.filter(s=>s.paymentType==="mixto").reduce((s,x)=>s+(x.mixEfectivo||0),0);
   const abonosEfectivoHoy = (fiados||[]).reduce((sum,f)=>sum+(f.history||[]).filter(h=>h.type==="abono"&&h.date===today&&h.metodo==="efectivo").reduce((s,h)=>s+h.amount,0),0);
   const gastosEfectivoHoy = (gastos||[]).filter(g=>g.fecha===today&&g.metodoPago==="efectivo").reduce((s,g)=>s+g.monto,0);
+  const pagosProveedorEfectivoHoy = (proveedores||[]).reduce((sum,p)=>sum+(p.history||[]).filter(h=>h.type==="pago"&&h.fecha===today&&h.metodo==="efectivo").reduce((s,h)=>s+h.amount,0),0);
   const retiros = cajaState.retiros || [];
   const retirosHoy = retiros.filter(r=>r.fecha===today).reduce((s,r)=>s+r.monto,0);
-  const expected=cajaState.openingAmount+cashSales+abonosEfectivoHoy-gastosEfectivoHoy-retirosHoy;
+  const expected=cajaState.openingAmount+cashSales+abonosEfectivoHoy-gastosEfectivoHoy-pagosProveedorEfectivoHoy-retirosHoy;
   const diff=counted!==""?Number(counted)-expected:0;
   const byMethod=PAYMENT_METHODS.map(m=>({...m,count:salesToday.filter(s=>s.paymentType===m.id).length,total:salesToday.filter(s=>s.paymentType===m.id).reduce((s,x)=>s+x.total,0)})).filter(m=>m.id!=="fiado");
   const ultimoCierre = turnos.find(t=>t.cierre && t.montoContado!=null);
@@ -3196,7 +3421,7 @@ function CajaView({ sales, fiados, gastos, cajaState, setCajaState, showToast, c
       <PageHeader title="Caja" subtitle="Control de efectivo y turnos del día" right={
         <Btn variant="outline" icon={Printer} onClick={()=>imprimirCorteDelDia({
           fecha: today, openingAmount: cajaState.openingAmount, cashSales, abonos: abonosEfectivoHoy,
-          gastosEfectivo: gastosEfectivoHoy, retiros: retirosHoy, expected, byMethod, totalVentas: salesToday.reduce((s,x)=>s+x.total,0),
+          gastosEfectivo: gastosEfectivoHoy, pagosProveedor: pagosProveedorEfectivoHoy, retiros: retirosHoy, expected, byMethod, totalVentas: salesToday.reduce((s,x)=>s+x.total,0),
           cantidadVentas: salesToday.length,
         }, profile)}>Imprimir corte del día</Btn>
       }/>
@@ -3224,7 +3449,7 @@ function CajaView({ sales, fiados, gastos, cajaState, setCajaState, showToast, c
 
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5">
-        <Card style={{padding:18}}><div className="text-xs" style={{color:C.textMuted}}>Efectivo esperado</div><div className="text-2xl font-bold mt-1" style={{fontFamily:FONT_MONO,color:C.text}}>{formatCLP(expected)}</div><div className="text-xs mt-1" style={{color:C.textMuted}}>Apertura {formatCLP(cajaState.openingAmount)} + Ventas {formatCLP(cashSales)}{abonosEfectivoHoy>0?` + Abonos ${formatCLP(abonosEfectivoHoy)}`:""}{gastosEfectivoHoy>0?` - Gastos ${formatCLP(gastosEfectivoHoy)}`:""}{retirosHoy>0?` - Retiros ${formatCLP(retirosHoy)}`:""}</div></Card>
+        <Card style={{padding:18}}><div className="text-xs" style={{color:C.textMuted}}>Efectivo esperado</div><div className="text-2xl font-bold mt-1" style={{fontFamily:FONT_MONO,color:C.text}}>{formatCLP(expected)}</div><div className="text-xs mt-1" style={{color:C.textMuted}}>Apertura {formatCLP(cajaState.openingAmount)} + Ventas {formatCLP(cashSales)}{abonosEfectivoHoy>0?` + Abonos ${formatCLP(abonosEfectivoHoy)}`:""}{gastosEfectivoHoy>0?` - Gastos ${formatCLP(gastosEfectivoHoy)}`:""}{pagosProveedorEfectivoHoy>0?` - Pagos a prov. ${formatCLP(pagosProveedorEfectivoHoy)}`:""}{retirosHoy>0?` - Retiros ${formatCLP(retirosHoy)}`:""}</div></Card>
         <Card style={{padding:18}}><div className="text-xs" style={{color:C.textMuted}}>Total vendido hoy</div><div className="text-2xl font-bold mt-1" style={{fontFamily:FONT_MONO,color:C.text}}>{formatCLP(salesToday.reduce((s,x)=>s+x.total,0))}</div><div className="text-xs mt-1" style={{color:C.textMuted}}>{salesToday.length} boletas emitidas</div></Card>
       </div>
 
@@ -3317,6 +3542,7 @@ function ConfigurarView({ profile, setProfile, showToast, users, currentUser, on
   const [newUser,setNewUser]=useState({name:"",pin:"",role:"vendedor"});
   const [newCat,setNewCat]=useState("");
   const [catToDelete,setCatToDelete]=useState(null);
+  const [userToDelete,setUserToDelete]=useState(null);
   const [editingPin, setEditingPin] = useState(false);
   const [pinValue, setPinValue] = useState("");
   const currentCategories = activeCategories(profile);
@@ -3397,7 +3623,7 @@ function ConfigurarView({ profile, setProfile, showToast, users, currentUser, on
                     <div className="flex items-center gap-2">
                       <span className="text-xs px-2 py-1 rounded-md font-medium" style={{background:u.role==="admin"?C.orangeLight:C.tealLight,color:u.role==="admin"?C.orangeDark:C.teal}}>{u.role==="admin"?"Admin":"Vendedor"}</span>
                       {u.id===currentUser.id && <button onClick={()=>{setEditingPin(true);setPinValue("");}} className="text-xs font-semibold" style={{color:C.orange}}>{u.pin?"Cambiar PIN":"Crear mi PIN"}</button>}
-                      {u.id!==currentUser.id&&<button onClick={()=>onDeleteUser(u.id)} className="p-1.5 rounded-lg hover:bg-black/5"><Trash2 size={14} color={C.danger}/></button>}
+                      {u.id!==currentUser.id&&<button onClick={()=>setUserToDelete(u)} className="p-1.5 rounded-lg hover:bg-black/5"><Trash2 size={14} color={C.danger}/></button>}
                     </div>
                   )}
                 </div>
@@ -3513,6 +3739,19 @@ function ConfigurarView({ profile, setProfile, showToast, users, currentUser, on
           </div>
         </Modal>
       )}
+      {userToDelete && (
+        <Modal title="Eliminar usuario" onClose={()=>setUserToDelete(null)} width={360}>
+          <div className="flex flex-col items-center text-center gap-3 py-2">
+            <div className="w-12 h-12 rounded-full flex items-center justify-center" style={{background:C.dangerLight}}><AlertTriangle size={20} color={C.danger}/></div>
+            <p className="text-sm" style={{color:C.text}}>¿Eliminar a <strong>{userToDelete.name}</strong>? Va a perder su PIN y el acceso al sistema.</p>
+            <p className="text-xs" style={{color:C.textMuted}}>Las ventas que ya registró quedan intactas en tu historial y Contabilidad.</p>
+            <div className="flex gap-2 w-full mt-2">
+              <Btn full variant="ghost" onClick={()=>setUserToDelete(null)}>No</Btn>
+              <Btn full variant="dark" onClick={()=>{onDeleteUser(userToDelete.id); setUserToDelete(null);}}>Sí, eliminar</Btn>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
@@ -3588,17 +3827,20 @@ const FIN_EXPLAIN = {
   "Cuentas por cobrar (Fiados)": "Monto que los clientes deben por ventas al fiado que aún no han pagado.",
   "Valor inventario": "Valor del stock disponible, calculado al precio de compra (no al precio de venta).",
   "Ingresos por transferencia / tarjeta": "Ventas pagadas por transferencia, débito o crédito. Este dinero suele demorar uno o más días hábiles en depositarse.",
-  "Cuentas por pagar (proveedores)": "Monto adeudado a proveedores por mercadería ya recibida y aún no pagada.",
-  "Gastos pendientes": "Gastos del negocio (arriendo, luz, etc.) ya generados y todavía no pagados.",
+  "Cuentas por pagar (proveedores)": "Monto adeudado a proveedores por mercadería ya recibida y aún no pagada. Incluye cualquier gasto marcado como \"aún no pagado\", no solo mercadería.",
   "Capital invertido": "Monto total destinado a mantener el funcionamiento del negocio, según los gastos registrados.",
   "Utilidad acumulada": "Ganancia total generada por el negocio hasta la fecha, después de descontar todos los costos.",
   "Ingresos por ventas": "Monto total generado por las ventas, sin descontar costos.",
   "Costo de mercadería vendida": "Costo de compra de los productos ya vendidos (no el precio al que se vendieron).",
-  "UTILIDAD BRUTA": "Ganancia obtenida por las ventas, antes de descontar gastos operacionales como arriendo, luz o sueldos. Se calcula restando el Costo de mercadería vendida a los Ingresos por ventas.",
-  "Gastos operacionales": "Gastos necesarios para el funcionamiento diario del negocio: arriendo, luz, sueldos, insumos, entre otros.",
+  "Costo de venta (real)": "Lo que te costó comprar, a precio de hoy, solo los productos que efectivamente vendiste — no lo que gastaste comprando stock ese mes. Así la ganancia refleja tus ventas reales, aunque hayas repuesto mucho o poco stock ese período.",
+  "UTILIDAD BRUTA": "Ganancia obtenida por las ventas, antes de descontar gastos operacionales como arriendo, luz o sueldos. Se calcula restando el Costo de venta (real) a los Ingresos por ventas.",
+  "Gastos operacionales": "Gastos necesarios para el funcionamiento diario del negocio: arriendo, luz, sueldos, insumos, entre otros. No incluye lo que gastaste comprando mercadería.",
   "UTILIDAD OPERACIONAL / NETA": "Ganancia final del negocio, después de descontar todos los costos y gastos.",
+  "UTILIDAD OPERACIONAL": "Lo que tu negocio realmente ganó vendiendo en este período, calculado de forma correcta: ingresos menos el costo de lo vendido menos los gastos operacionales. Es el número más confiable para saber si tu negocio es rentable.",
+  "Variación de inventario": "La diferencia entre lo que gastaste comprando mercadería y lo que realmente vendiste, en costo. Si es positiva, compraste más de lo que vendiste (tu stock está creciendo). Si es negativa, vendiste más de lo que compraste (estás usando stock que ya tenías). Sumando esta variación a la Utilidad Operacional se obtiene la Utilidad Neta (caja).",
+  "UTILIDAD NETA (caja)": "La plata que efectivamente entró y salió del negocio en este período, tratando toda compra de mercadería como gasto inmediato (así se lo use o no todavía). Es útil para saber cómo se mueve tu efectivo, pero puede diferir de la Utilidad Operacional si compraste mucho o poco stock ese período.",
   "Margen bruto": "Porcentaje de cada venta que corresponde a ganancia antes de gastos operacionales.",
-  "Margen neto": "Porcentaje de cada venta que corresponde a ganancia final, después de todos los gastos.",
+  "Margen neto": "Porcentaje de cada venta que corresponde a ganancia final, después de todos los gastos (en base a caja).",
 };
 
 function InfoRow({ label, value, color, bold=false, border=false, suffix }) {
@@ -3629,6 +3871,26 @@ function InfoRow({ label, value, color, bold=false, border=false, suffix }) {
   );
 }
 
+// Carga la librería ExcelJS desde internet (solo la primera vez que se necesita).
+// Si no hay conexión, avisa con un mensaje claro en vez de quedar esperando para siempre.
+function cargarExcelJS() {
+  return new Promise((resolve, reject) => {
+    if (window.ExcelJS) { resolve(window.ExcelJS); return; }
+    const existente = document.querySelector('script[data-exceljs-loader]');
+    if (existente) {
+      existente.addEventListener("load", () => resolve(window.ExcelJS));
+      existente.addEventListener("error", () => reject(new Error("No se pudo cargar el exportador")));
+      return;
+    }
+    const s = document.createElement("script");
+    s.src = "https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js";
+    s.setAttribute("data-exceljs-loader", "1");
+    s.onload = () => resolve(window.ExcelJS);
+    s.onerror = () => reject(new Error("No se pudo cargar el exportador"));
+    document.head.appendChild(s);
+  });
+}
+
 function ContabilidadView({ sales, products, gastos, setGastos, proveedores, setProveedores, fiados, showToast }) {
   const [tab, setTab] = useState("panel");
   const [showGastoForm, setShowGastoForm] = useState(false);
@@ -3636,21 +3898,70 @@ function ContabilidadView({ sales, products, gastos, setGastos, proveedores, set
   const [gasto, setGasto] = useState({ fecha: todayISO(), categoria: GASTO_CATS[0], descripcion: "", monto: "", proveedor: "", facturaUrl: "", facturaNombre: "", metodoPago: "" });
   const [customCat, setCustomCat] = useState(false);
   const [prov, setProv] = useState({ nombre: "", rut: "", telefono: "", email: "", condiciones: "30 días" });
+  const [pagoProvTarget, setPagoProvTarget] = useState(null);
+  const [pagoProvMonto, setPagoProvMonto] = useState("");
+  const [pagoProvMetodo, setPagoProvMetodo] = useState("efectivo");
+  const [delProvTarget, setDelProvTarget] = useState(null);
+
+  function pagarProveedor() {
+    if (!pagoProvTarget || !(Number(pagoProvMonto) > 0)) return;
+    const monto = Math.min(Number(pagoProvMonto), pagoProvTarget.balance || 0);
+    const pago = { fecha: todayISO(), type: "pago", amount: monto, metodo: pagoProvMetodo, note: "Pago a proveedor" };
+    setProveedores(proveedores.map(p => p.id === pagoProvTarget.id
+      ? { ...p, balance: (p.balance || 0) - monto, history: [pago, ...(p.history || [])] }
+      : p));
+    showToast(`Pago de ${formatCLP(monto)} registrado a ${pagoProvTarget.nombre}`);
+    setPagoProvTarget(null); setPagoProvMonto(""); setPagoProvMetodo("efectivo");
+  }
 
   // Cálculos base
-  const totalVentas = sales.reduce((s, x) => s + x.total, 0);
+  // Las ventas devueltas (ver Boletas → Devolver) ya no son ingreso real: se excluyen de
+  // todos los totales de dinero. La lista completa (incluidas las devueltas) sigue disponible
+  // en Boletas y en la hoja de Excel, para que quede el registro de que existieron.
+  const ventasNetas = sales.filter(s => !s.devuelta);
+  const totalVentas = ventasNetas.reduce((s, x) => s + x.total, 0);
   const totalGastos = gastos.reduce((s, g) => s + g.monto, 0);
+  // "Compras de mercadería" = lo que gastaste reponiendo stock (puede no calzar con lo vendido este mes)
   const costoMercaderia = gastos.filter(g => g.categoria === "Mercadería").reduce((s, g) => s + g.monto, 0);
+  // Costo de venta REAL = costo de compra de lo que efectivamente se vendió (por producto, a su precio de compra actual).
+  // Esto es lo correcto para medir rentabilidad del período — no depende de cuándo repusiste stock.
+  const costoVentaReal = ventasNetas.reduce((s, sale) => s + (sale.items||[]).reduce((s2, it) => {
+    // Usa el costo guardado al momento de la venta (preciso y no cambia si editas/borras el producto).
+    // Si la venta es anterior a esta función y no tiene ese dato guardado, se aproxima con el costo actual del producto.
+    let costoUnit = it.cost;
+    if (costoUnit === undefined || costoUnit === null) {
+      const p = products.find(x => x.id === it.productId);
+      costoUnit = p ? p.purchasePrice : 0;
+    }
+    return s2 + costoUnit * it.qty;
+  }, 0), 0);
+  // Diferencia entre lo comprado y lo vendido (en costo) — stock que se está acumulando o consumiendo
+  const variacionInventario = costoMercaderia - costoVentaReal;
   const otrosGastos = totalGastos - costoMercaderia;
-  const utilidadBruta = totalVentas - costoMercaderia;
+  const utilidadBruta = totalVentas - costoVentaReal;
+  const utilidadOperacional = utilidadBruta - otrosGastos;
   const utilidadNeta = totalVentas - totalGastos;
   const margenNeto = totalVentas > 0 ? (utilidadNeta / totalVentas * 100).toFixed(1) : 0;
   const margenBruto = totalVentas > 0 ? (utilidadBruta / totalVentas * 100).toFixed(1) : 0;
 
+  // Balance General — compartido entre la pantalla y la exportación a Excel
+  // Las ventas con pago mixto reparten su monto entre efectivo y tarjeta/transferencia según
+  // lo que el vendedor registró al cobrar — si no, esa plata quedaba fuera de ambos totales.
+  const ventasMixtas = ventasNetas.filter(s => s.paymentType === "mixto");
+  const efectivoEnCaja = ventasNetas.filter(s => s.paymentType === "efectivo").reduce((a, s) => a + s.total, 0)
+    + ventasMixtas.reduce((a, s) => a + (s.mixEfectivo||0), 0);
+  const ingresosTarjetaTransfer = ventasNetas.filter(s => ["debito","credito","transferencia"].includes(s.paymentType)).reduce((a, s) => a + s.total, 0)
+    + ventasMixtas.reduce((a, s) => a + (s.mixOtro||0), 0);
+  const valorInventario = products.reduce((s, p) => s + p.purchasePrice * p.stock, 0);
+  const cuentasPorCobrar = (fiados||[]).reduce((s,f)=>s+f.balance, 0);
+  const cuentasPorPagar = (proveedores||[]).reduce((s,p)=>s+(p.balance||0), 0);
+  const totalActivos = totalVentas + valorInventario + cuentasPorCobrar;
+  const totalPasivos = totalGastos + utilidadNeta + cuentasPorPagar;
+
   // Gráfico ventas vs gastos por mes
   const chartData = useMemo(() => {
     const meses = {};
-    sales.forEach(s => {
+    ventasNetas.forEach(s => {
       const m = s.datetime.slice(0, 7);
       if (!meses[m]) meses[m] = { mes: m.slice(5), ventas: 0, gastos: 0 };
       meses[m].ventas += s.total;
@@ -3661,16 +3972,39 @@ function ContabilidadView({ sales, products, gastos, setGastos, proveedores, set
       meses[m].gastos += g.monto;
     });
     return Object.values(meses).sort((a, b) => a.mes.localeCompare(b.mes));
-  }, [sales, gastos]);
+  }, [ventasNetas, gastos]);
 
-  const flujoData = useMemo(() => {
+  // Flujo de caja REAL: solo plata que efectivamente entró o salió del negocio — no cuenta
+  // fiados aún no cobrados ni compras a crédito aún no pagadas (eso es el Estado de Resultados).
+  const flujoCajaReal = useMemo(() => {
+    const meses = {};
+    function slot(fechaISO) {
+      const m = fechaISO.slice(0, 7);
+      if (!meses[m]) meses[m] = { mes: m.slice(5), entradas: 0, salidas: 0 };
+      return meses[m];
+    }
+    sales.forEach(s => {
+      if (s.paymentType === "fiado" || s.devuelta) return; // no entró plata todavía, o se devolvió
+      slot(s.datetime).entradas += s.total;
+    });
+    (fiados||[]).forEach(f => (f.history||[]).forEach(h => {
+      if (h.type === "abono") slot(h.date).entradas += h.amount;
+    }));
+    gastos.forEach(g => {
+      if (!g.metodoPago) return; // "Aún no lo he pagado" — todavía no salió efectivo
+      slot(g.fecha).salidas += g.monto;
+    });
+    (proveedores||[]).forEach(p => (p.history||[]).forEach(h => {
+      if (h.type === "pago") slot(h.fecha).salidas += h.amount;
+    }));
     let saldo = 0;
-    return chartData.map(d => {
-      const flujoNeto = d.ventas - d.gastos;
+    return Object.keys(meses).sort().map(k => {
+      const d = meses[k];
+      const flujoNeto = d.entradas - d.salidas;
       saldo += flujoNeto;
       return { ...d, flujoNeto, saldo };
     });
-  }, [chartData]);
+  }, [sales, gastos, fiados, proveedores]);
 
   // Gráfico torta gastos por categoría
   const pieData = useMemo(() => {
@@ -3679,24 +4013,43 @@ function ContabilidadView({ sales, products, gastos, setGastos, proveedores, set
     return Object.entries(cats).map(([name, value]) => ({ name, value }));
   }, [gastos]);
 
-  // Proyección próximo mes (promedio últimos 3 meses)
+  // Proyección próximo mes — usa hasta los últimos 6 meses con datos, dando más peso a los
+  // meses recientes (no un simple promedio plano), y detecta si las ventas vienen subiendo,
+  // bajando o estables para poder explicarlo en palabras simples.
   const proyeccion = useMemo(() => {
-    const now = new Date();
-    const meses3 = [0, 1, 2].map(i => {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      return d.toISOString().slice(0, 7);
-    });
-    const ventasProm = meses3.reduce((s, m) => s + sales.filter(x => x.datetime.startsWith(m)).reduce((a, x) => a + x.total, 0), 0) / 3;
-    const gastosProm = meses3.reduce((s, m) => s + gastos.filter(g => g.fecha.startsWith(m)).reduce((a, g) => a + g.monto, 0), 0) / 3;
-    return { ventas: ventasProm, gastos: gastosProm, utilidad: ventasProm - gastosProm };
-  }, [sales, gastos]);
+    const historial = chartData.slice(-6);
+    const n = historial.length;
+    if (n === 0) return { ventas: 0, gastos: 0, utilidad: 0, tendencia: "sin_datos", variacionPct: 0, mesesUsados: 0 };
+
+    const pesos = historial.map((_, i) => i + 1); // los meses más recientes pesan más
+    const sumaPesos = pesos.reduce((a, b) => a + b, 0);
+    const ventasProm = historial.reduce((s, d, i) => s + d.ventas * pesos[i], 0) / sumaPesos;
+    const gastosProm = historial.reduce((s, d, i) => s + d.gastos * pesos[i], 0) / sumaPesos;
+
+    const mitad = Math.max(1, Math.floor(n / 2));
+    const primeraParte = historial.slice(0, mitad).reduce((s, d) => s + d.ventas, 0) / mitad;
+    const segundaMitad = historial.slice(mitad);
+    const segundaParte = segundaMitad.length ? segundaMitad.reduce((s, d) => s + d.ventas, 0) / segundaMitad.length : primeraParte;
+    const variacionPct = primeraParte > 0 ? ((segundaParte - primeraParte) / primeraParte * 100) : 0;
+    const tendencia = n < 2 ? "sin_datos" : variacionPct > 5 ? "subiendo" : variacionPct < -5 ? "bajando" : "estable";
+
+    return { ventas: ventasProm, gastos: gastosProm, utilidad: ventasProm - gastosProm, tendencia, variacionPct, mesesUsados: n };
+  }, [chartData]);
 
   // Ratios
   const puntoEquilibrio = otrosGastos > 0 && margenBruto > 0 ? (otrosGastos / (Number(margenBruto) / 100)).toFixed(0) : 0;
 
   async function exportarExcel() {
-    const ExcelJS = window.ExcelJS;
-    if (!ExcelJS) { showToast("Cargando exportador...", "error"); return; }
+    let ExcelJS = window.ExcelJS;
+    if (!ExcelJS) {
+      showToast("Preparando el exportador, un momento...");
+      try {
+        ExcelJS = await cargarExcelJS();
+      } catch {
+        showToast("No se pudo cargar el exportador — revisa tu conexión a internet e intenta de nuevo", "error");
+        return;
+      }
+    }
 
     const wb = new ExcelJS.Workbook();
     const NARANJA = "FFFF6B00", OSCURO = "FF1C0A00", BLANCO = "FFFFFFFF", GRIS = "FFF8F9FA";
@@ -3760,8 +4113,7 @@ function ContabilidadView({ sales, products, gastos, setGastos, proveedores, set
     ws1.addRow([]);
     seccion("BALANCE GENERAL — PASIVOS Y PATRIMONIO");
     subHeader("Concepto","Monto");
-    dato("Cuentas por pagar (proveedores)", 0);
-    dato("Gastos pendientes", 0);
+    dato("Cuentas por pagar (proveedores)", cuentasPorPagar);
     dato("Capital invertido", totalGastos);
     dato("Utilidad acumulada", utilidadNeta);
     dato("TOTAL PASIVOS + PATRIMONIO", totalPasivos, { bold:true, bg:"FFEFF6FF", color:"FF1D4ED8" });
@@ -3770,10 +4122,12 @@ function ContabilidadView({ sales, products, gastos, setGastos, proveedores, set
     seccion("ESTADO DE RESULTADOS");
     subHeader("Concepto","Monto");
     dato("Ingresos por ventas", totalVentas);
-    dato("Costo de mercadería vendida", -costoMercaderia);
+    dato("Costo de venta (real, según lo vendido)", -costoVentaReal);
     dato("UTILIDAD BRUTA", utilidadBruta, { bold:true, bg:GRIS });
     dato("Gastos operacionales", -otrosGastos);
-    dato("UTILIDAD NETA", utilidadNeta, { bold:true, bg:utilidadNeta>=0?VERDE:ROJO, color:utilidadNeta>=0?VERDE_TXT:ROJO_TXT });
+    dato("UTILIDAD OPERACIONAL", utilidadOperacional, { bold:true, bg:utilidadOperacional>=0?VERDE:ROJO, color:utilidadOperacional>=0?VERDE_TXT:ROJO_TXT });
+    dato("Variación de inventario (compras - ventas, en costo)", variacionInventario, { money:true });
+    dato("UTILIDAD NETA (caja: ventas - todos los gastos)", utilidadNeta, { bold:true, bg:utilidadNeta>=0?VERDE:ROJO, color:utilidadNeta>=0?VERDE_TXT:ROJO_TXT });
 
     ws1.addRow([]);
     seccion("RATIOS CLAVE");
@@ -3781,7 +4135,7 @@ function ContabilidadView({ sales, products, gastos, setGastos, proveedores, set
     dato("Margen bruto", Number(margenBruto)/100, { pct:true });
     dato("Margen neto", Number(margenNeto)/100, { pct:true });
     dato("Punto de equilibrio", Number(puntoEquilibrio));
-    dato("Ticket promedio", sales.length ? totalVentas/sales.length : 0);
+    dato("Ticket promedio", ventasNetas.length ? totalVentas/ventasNetas.length : 0);
     dato("Total boletas emitidas", sales.length, { money:false });
 
     ws1.addRow([]);
@@ -3793,10 +4147,15 @@ function ContabilidadView({ sales, products, gastos, setGastos, proveedores, set
 
     // ===================== HOJA 2: VENTAS =====================
     const ws2 = wb.addWorksheet("💰 Ventas");
-    ws2.columns = [{width:12},{width:12},{width:18},{width:15},{width:16},{width:10},{width:14}];
+    ws2.columns = [{width:12},{width:12},{width:18},{width:15},{width:18},{width:10},{width:14}];
     estiloHeader(ws2.addRow(["Voucher","Boleta SII","Fecha","Vendedor","Medio de Pago","N° Items","Total"]));
-    sales.forEach(s => estiloFila(ws2.addRow([s.voucher, s.boletaSII, formatDateTime(s.datetime), s.vendor, PAYMENT_LABEL[s.paymentType]||s.paymentType, (s.items||[]).length, s.total]), {money:[7]}));
-    estiloFila(ws2.addRow(["","","","","","TOTAL", sales.reduce((a,s)=>a+s.total,0)]), {bold:true, bg:GRIS, money:[7]});
+    sales.forEach(s => {
+      const medioPago = (PAYMENT_LABEL[s.paymentType]||s.paymentType)
+        + (s.paymentType==="mixto" ? ` (Efec. ${formatCLP(s.mixEfectivo||0)} / Otro ${formatCLP(s.mixOtro||0)})` : "")
+        + (s.devuelta?" (DEVUELTA)":"");
+      estiloFila(ws2.addRow([s.voucher, s.boletaSII, formatDateTime(s.datetime), s.vendor, medioPago, (s.items||[]).length, s.total]), {money:[7], color: s.devuelta?"FF9CA3AF":OSCURO});
+    });
+    estiloFila(ws2.addRow(["","","","","","TOTAL (sin devueltas)", ventasNetas.reduce((a,s)=>a+s.total,0)]), {bold:true, bg:GRIS, money:[7]});
 
     // ===================== HOJA 3: GASTOS =====================
     const ws3 = wb.addWorksheet("💸 Gastos");
@@ -3821,9 +4180,10 @@ function ContabilidadView({ sales, products, gastos, setGastos, proveedores, set
 
     // ===================== HOJA 6: PROVEEDORES =====================
     const ws6 = wb.addWorksheet("🚚 Proveedores");
-    ws6.columns = [{width:25},{width:14},{width:16},{width:25},{width:18}];
-    estiloHeader(ws6.addRow(["Nombre","RUT","Teléfono","Email","Condiciones de Pago"]));
-    proveedores.forEach(p => estiloFila(ws6.addRow([p.nombre, p.rut, p.telefono, p.email, p.condiciones])));
+    ws6.columns = [{width:25},{width:14},{width:16},{width:25},{width:18},{width:16}];
+    estiloHeader(ws6.addRow(["Nombre","RUT","Teléfono","Email","Condiciones de Pago","Deuda actual"]));
+    proveedores.forEach(p => estiloFila(ws6.addRow([p.nombre, p.rut, p.telefono, p.email, p.condiciones, p.balance||0]), {money:[6]}));
+    estiloFila(ws6.addRow(["","","","","TOTAL ADEUDADO", cuentasPorPagar]), {bold:true, bg:GRIS, money:[6]});
 
     const buffer = await wb.xlsx.writeBuffer();
     const blob = new Blob([buffer], { type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
@@ -3835,11 +4195,9 @@ function ContabilidadView({ sales, products, gastos, setGastos, proveedores, set
   }
 
   useEffect(() => {
-    if (!window.ExcelJS) {
-      const s = document.createElement("script");
-      s.src = "https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js";
-      document.head.appendChild(s);
-    }
+    // Precarga silenciosa — si falla (sin internet), no pasa nada: se reintenta
+    // automáticamente cuando el usuario haga clic en "Exportar a Excel".
+    cargarExcelJS().catch(() => {});
   }, []);
 
   const TABS = [
@@ -3996,8 +4354,14 @@ function ContabilidadView({ sales, products, gastos, setGastos, proveedores, set
                           <m.icon size={13}/> {m.label}
                         </button>
                       ))}
+                      <button type="button" onClick={()=>setGasto({...gasto, metodoPago: gasto.metodoPago==="a_credito"?"":"a_credito"})}
+                        className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold"
+                        style={{border:`1.5px solid ${gasto.metodoPago==="a_credito"?C.danger:C.border}`, background:gasto.metodoPago==="a_credito"?C.danger+"15":"#fff", color:gasto.metodoPago==="a_credito"?C.danger:C.text}}>
+                        <Truck size={13}/> Aún no lo he pagado
+                      </button>
                     </div>
                     {gasto.metodoPago==="efectivo" && <p className="text-[11px] mt-1.5" style={{color:C.textMuted}}>Se descontará del efectivo esperado en Caja 360° el día de hoy.</p>}
+                    {gasto.metodoPago==="a_credito" && <p className="text-[11px] mt-1.5" style={{color:C.danger}}>Quedará registrado como deuda con el proveedor — escribe su nombre en "Proveedor" arriba.</p>}
                   </Field>
                 </div>
                 <div className="col-span-2">
@@ -4026,13 +4390,18 @@ function ContabilidadView({ sales, products, gastos, setGastos, proveedores, set
               </div>
               <div className="flex justify-end gap-2 mt-6">
                 <Btn variant="ghost" onClick={() => setShowGastoForm(false)}>Cancelar</Btn>
-                <Btn icon={Check} onClick={() => {
+                <Btn icon={Check} disabled={gasto.metodoPago==="a_credito" && !gasto.proveedor.trim()} onClick={() => {
                   if (!gasto.descripcion.trim() || !gasto.monto || !gasto.categoria.trim()) return;
-                  setGastos([{ id: uid("g"), ...gasto, monto: Number(gasto.monto) }, ...gastos]);
+                  const esACredito = gasto.metodoPago === "a_credito";
+                  if (esACredito && !gasto.proveedor.trim()) return;
+                  setGastos([{ id: uid("g"), ...gasto, monto: Number(gasto.monto), metodoPago: esACredito ? "" : gasto.metodoPago }, ...gastos]);
+                  if (esACredito) {
+                    registrarDeudaProveedor(proveedores, setProveedores, gasto.proveedor, Number(gasto.monto), gasto.descripcion);
+                  }
                   setGasto({ fecha: todayISO(), categoria: GASTO_CATS[0], descripcion: "", monto: "", proveedor: "", facturaUrl: "", facturaNombre: "", metodoPago: "" });
                   setCustomCat(false);
                   setShowGastoForm(false);
-                  showToast("Gasto registrado");
+                  showToast(esACredito ? "Gasto registrado y deuda agregada al proveedor" : "Gasto registrado");
                 }}>Guardar gasto</Btn>
               </div>
             </Modal>
@@ -4054,13 +4423,22 @@ function ContabilidadView({ sales, products, gastos, setGastos, proveedores, set
               <Card key={p.id} style={{ padding: 18 }}>
                 <div className="flex items-start justify-between mb-3">
                   <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: C.navyLight }}><Truck size={18} color={C.navy} /></div>
-                  <button onClick={() => setProveedores(proveedores.filter(x => x.id !== p.id))}><Trash2 size={14} color={C.danger} /></button>
+                  <button onClick={() => setDelProvTarget(p)}><Trash2 size={14} color={C.danger} /></button>
                 </div>
                 <div className="font-bold text-sm mb-1" style={{ color: C.text }}>{p.nombre}</div>
                 <div className="text-xs" style={{ color: C.textMuted, fontFamily: FONT_MONO }}>{p.rut}</div>
                 <div className="text-xs mt-1" style={{ color: C.textMuted }}>{p.telefono}</div>
                 <div className="text-xs mt-1" style={{ color: C.textMuted }}>{p.email}</div>
-                <div className="mt-2 text-xs px-2 py-1 rounded-md inline-block" style={{ background: C.amberLight, color: C.amber }}>Pago: {p.condiciones}</div>
+                {p.condiciones && <div className="mt-2 text-xs px-2 py-1 rounded-md inline-block" style={{ background: C.amberLight, color: C.amber }}>Pago: {p.condiciones}</div>}
+                <div className="mt-3 pt-3 flex items-center justify-between" style={{ borderTop: `1px solid ${C.border}` }}>
+                  <div>
+                    <div className="text-[10px] font-semibold uppercase" style={{ color: C.textMuted }}>Le debes</div>
+                    <div className="text-base font-bold" style={{ fontFamily: FONT_MONO, color: (p.balance||0) > 0 ? C.danger : C.success }}>{formatCLP(p.balance||0)}</div>
+                  </div>
+                  {(p.balance||0) > 0 && (
+                    <Btn variant="outline" onClick={() => { setPagoProvTarget(p); setPagoProvMonto(String(p.balance||0)); }}>Pagar</Btn>
+                  )}
+                </div>
               </Card>
             ))}
           </div>
@@ -4078,11 +4456,60 @@ function ContabilidadView({ sales, products, gastos, setGastos, proveedores, set
                 <Btn variant="ghost" onClick={() => setShowProvForm(false)}>Cancelar</Btn>
                 <Btn icon={Check} onClick={() => {
                   if (!prov.nombre.trim()) return;
-                  setProveedores([{ id: uid("pv"), ...prov }, ...proveedores]);
+                  setProveedores([{ id: uid("pv"), ...prov, balance: 0, history: [] }, ...proveedores]);
                   setProv({ nombre: "", rut: "", telefono: "", email: "", condiciones: "30 días" });
                   setShowProvForm(false);
                   showToast("Proveedor agregado");
                 }}>Guardar</Btn>
+              </div>
+            </Modal>
+          )}
+
+          {pagoProvTarget && (
+            <Modal title={"Pagar a " + pagoProvTarget.nombre} onClose={() => setPagoProvTarget(null)} width={420}>
+              <div className="flex flex-col gap-4">
+                <div className="rounded-xl px-4 py-3" style={{ background: C.cream }}>
+                  <div className="text-xs font-semibold" style={{ color: C.textMuted }}>Deuda actual</div>
+                  <div className="text-xl font-bold" style={{ fontFamily: FONT_MONO, color: C.danger }}>{formatCLP(pagoProvTarget.balance||0)}</div>
+                </div>
+                <Field label="Monto a pagar"><MoneyInput value={pagoProvMonto} onChange={setPagoProvMonto} placeholder="0" /></Field>
+                <Field label="¿Cómo le pagas?">
+                  <div className="flex flex-wrap gap-2">
+                    {PAYMENT_METHODS.filter(m=>m.id!=="fiado"&&m.id!=="mixto").map(m=>(
+                      <button key={m.id} type="button" onClick={()=>setPagoProvMetodo(m.id)}
+                        className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold"
+                        style={{border:`1.5px solid ${pagoProvMetodo===m.id?m.color:C.border}`, background:pagoProvMetodo===m.id?m.color+"15":"#fff", color:pagoProvMetodo===m.id?m.color:C.text}}>
+                        <m.icon size={13}/> {m.label}
+                      </button>
+                    ))}
+                  </div>
+                  {pagoProvMetodo==="efectivo" && <p className="text-[11px] mt-1.5" style={{color:C.textMuted}}>Se descontará del efectivo esperado en Caja el día de hoy.</p>}
+                </Field>
+              </div>
+              <div className="flex justify-end gap-2 mt-6">
+                <Btn variant="ghost" onClick={() => setPagoProvTarget(null)}>Cancelar</Btn>
+                <Btn icon={Check} disabled={!(Number(pagoProvMonto) > 0)} onClick={pagarProveedor}>Registrar pago</Btn>
+              </div>
+            </Modal>
+          )}
+
+          {delProvTarget && (
+            <Modal title="Eliminar proveedor" onClose={() => setDelProvTarget(null)} width={420}>
+              {(delProvTarget.balance||0) > 0 ? (
+                <div className="flex gap-3 p-3 rounded-xl mb-2" style={{ background: C.dangerLight }}>
+                  <AlertTriangle size={18} color={C.danger} className="shrink-0 mt-0.5" />
+                  <p className="text-sm" style={{ color: "#9B1C1C" }}>
+                    Le debes <strong>{formatCLP(delProvTarget.balance)}</strong> a <strong>{delProvTarget.nombre}</strong>. Si lo eliminas, esa deuda desaparece de tu Balance y tus Ratios — ya no quedará registrada en ninguna parte.
+                  </p>
+                </div>
+              ) : (
+                <p className="text-sm" style={{color:C.text}}>¿Seguro que quieres eliminar a <strong>{delProvTarget.nombre}</strong>?</p>
+              )}
+              <div className="flex justify-end gap-2 mt-6">
+                <Btn variant="ghost" onClick={() => setDelProvTarget(null)}>Cancelar</Btn>
+                <Btn variant="danger" icon={Trash2} onClick={() => { setProveedores(proveedores.filter(x => x.id !== delProvTarget.id)); setDelProvTarget(null); showToast("Proveedor eliminado"); }}>
+                  {(delProvTarget.balance||0) > 0 ? "Eliminar de todos modos" : "Eliminar"}
+                </Btn>
               </div>
             </Modal>
           )}
@@ -4091,12 +4518,6 @@ function ContabilidadView({ sales, products, gastos, setGastos, proveedores, set
 
       {/* BALANCE Y RESULTADOS (fusionado) */}
       {tab === "finanzas" && (() => {
-        const efectivoEnCaja = sales.filter(s => s.paymentType === "efectivo").reduce((a, s) => a + s.total, 0);
-        const ingresosTarjetaTransfer = sales.filter(s => ["debito","credito","transferencia"].includes(s.paymentType)).reduce((a, s) => a + s.total, 0);
-        const valorInventario = products.reduce((s, p) => s + p.purchasePrice * p.stock, 0);
-        const cuentasPorCobrar = (fiados||[]).reduce((s,f)=>s+f.balance, 0);
-        const totalActivos = totalVentas + valorInventario + cuentasPorCobrar;
-        const totalPasivos = totalGastos + utilidadNeta;
         return (
           <div className="flex flex-col gap-5">
             <Card style={{ padding: 24 }}>
@@ -4106,15 +4527,15 @@ function ContabilidadView({ sales, products, gastos, setGastos, proveedores, set
                   { name: "Activos", monto: totalActivos, fill: C.teal },
                   { name: "Pasivos+Patrim.", monto: totalPasivos, fill: C.navy },
                   { name: "Ingresos", monto: totalVentas, fill: C.success },
-                  { name: "Costo mercad.", monto: costoMercaderia, fill: C.danger },
-                  { name: "Utilidad neta", monto: utilidadNeta, fill: C.orange },
+                  { name: "Costo venta", monto: costoVentaReal, fill: C.danger },
+                  { name: "Util. operac.", monto: utilidadOperacional, fill: C.orange },
                 ]}>
                   <CartesianGrid strokeDasharray="3 3" stroke={C.border} vertical={false} />
                   <XAxis dataKey="name" tick={{ fontSize: 11, fill: C.textMuted }} />
                   <YAxis tick={{ fontSize: 11, fill: C.textMuted }} tickFormatter={v => formatCLP(v)} width={70} />
                   <Tooltip formatter={v => formatCLP(v)} contentStyle={{ borderRadius: 10, border: `1px solid ${C.border}`, fontSize: 12 }} />
                   <Bar dataKey="monto" radius={[6, 6, 0, 0]}>
-                    {["Activos","Pasivos+Patrim.","Ingresos","Costo mercad.","Utilidad neta"].map((n, i) => (
+                    {["Activos","Pasivos+Patrim.","Ingresos","Costo venta","Util. operac."].map((n, i) => (
                       <Cell key={n} fill={[C.teal, C.navy, C.success, C.danger, C.orange][i]} />
                     ))}
                   </Bar>
@@ -4134,8 +4555,7 @@ function ContabilidadView({ sales, products, gastos, setGastos, proveedores, set
 
               <Card style={{ padding: 24 }}>
                 <h3 className="font-bold mb-2 text-base" style={{ fontFamily: FONT_DISPLAY, color: C.text }}>Pasivos y Patrimonio</h3>
-                <InfoRow label="Cuentas por pagar (proveedores)" value={0} color={C.text} />
-                <InfoRow label="Gastos pendientes" value={0} color={C.text} />
+                <InfoRow label="Cuentas por pagar (proveedores)" value={cuentasPorPagar} color={C.text} />
                 <InfoRow label="Capital invertido" value={totalGastos} color={C.text} />
                 <InfoRow label="Utilidad acumulada" value={utilidadNeta} color={C.text} />
                 <InfoRow label="TOTAL PASIVOS + PATRIMONIO" value={totalPasivos} color={C.navy} bold border />
@@ -4144,11 +4564,14 @@ function ContabilidadView({ sales, products, gastos, setGastos, proveedores, set
 
             <Card style={{ padding: 24 }}>
               <h3 className="font-bold mb-2 text-base" style={{ fontFamily: FONT_DISPLAY, color: C.text }}>Estado de Resultados</h3>
+              <p className="text-xs mb-3" style={{ color: C.textMuted }}>Toca el ícono ⓘ de cada línea para ver qué significa. Las dos últimas líneas explican por qué la "Utilidad operacional" (lo que realmente ganaste vendiendo) puede ser distinta de la "Utilidad neta" (la plata que de verdad entró y salió de tu bolsillo).</p>
               <InfoRow label="Ingresos por ventas" value={totalVentas} color={C.success} />
-              <InfoRow label="Costo de mercadería vendida" value={-costoMercaderia} color={C.danger} />
+              <InfoRow label="Costo de venta (real)" value={-costoVentaReal} color={C.danger} />
               <InfoRow label="UTILIDAD BRUTA" value={utilidadBruta} color={utilidadBruta >= 0 ? C.success : C.danger} bold border />
               <InfoRow label="Gastos operacionales" value={-otrosGastos} color={C.danger} />
-              <InfoRow label="UTILIDAD OPERACIONAL / NETA" value={utilidadNeta} color={utilidadNeta >= 0 ? C.success : C.danger} bold border />
+              <InfoRow label="UTILIDAD OPERACIONAL" value={utilidadOperacional} color={utilidadOperacional >= 0 ? C.success : C.danger} bold border />
+              <InfoRow label="Variación de inventario" value={variacionInventario} color={C.textMuted} />
+              <InfoRow label="UTILIDAD NETA (caja)" value={utilidadNeta} color={utilidadNeta >= 0 ? C.success : C.danger} bold border />
               <InfoRow label={`Margen bruto`} suffix={`${margenBruto}%`} />
               <InfoRow label={`Margen neto`} suffix={`${margenNeto}%`} />
             </Card>
@@ -4163,7 +4586,7 @@ function ContabilidadView({ sales, products, gastos, setGastos, proveedores, set
             { label: "Margen Bruto", value: margenBruto + "%", desc: "Porcentaje de cada venta que queda como ganancia antes de descontar gastos operacionales (arriendo, luz, sueldos). Un valor sobre 25% se considera saludable.", good: Number(margenBruto) > 25 },
             { label: "Margen Neto", value: margenNeto + "%", desc: "Porcentaje de cada venta que queda como ganancia final, después de descontar todos los gastos del negocio.", good: Number(margenNeto) > 10 },
             { label: "Punto de Equilibrio", value: formatCLP(Number(puntoEquilibrio)), desc: "Monto de ventas necesario para cubrir los gastos del período, sin generar ganancia ni pérdida.", good: totalVentas >= Number(puntoEquilibrio) },
-            { label: "Ticket Promedio", value: formatCLP(sales.length ? totalVentas / sales.length : 0), desc: "Monto promedio gastado por cliente en cada boleta.", good: true },
+            { label: "Ticket Promedio", value: formatCLP(ventasNetas.length ? totalVentas / ventasNetas.length : 0), desc: "Monto promedio gastado por cliente en cada boleta.", good: true },
             { label: "Productos sin stock", value: products.filter(p => p.stock === 0).length, desc: "Cantidad de productos del catálogo que actualmente no tienen unidades disponibles para la venta.", good: products.filter(p => p.stock === 0).length === 0 },
             { label: "Rentabilidad ventas", value: totalGastos > 0 ? (utilidadNeta / totalGastos * 100).toFixed(1) + "%" : "—", desc: "Ganancia generada por cada peso invertido en el negocio (mercadería, arriendo y otros gastos).", good: utilidadNeta > 0 },
           ].map(r => (
@@ -4182,6 +4605,23 @@ function ContabilidadView({ sales, products, gastos, setGastos, proveedores, set
       {/* PROYECCIONES */}
       {tab === "proyecciones" && (
         <div className="flex flex-col gap-5">
+          {proyeccion.mesesUsados < 2 ? (
+            <div className="flex gap-3 p-4 rounded-xl" style={{ background: C.amberLight, border: `1px solid #FDE68A` }}>
+              <AlertTriangle size={18} color={C.amber} className="shrink-0 mt-0.5" />
+              <p className="text-sm" style={{ color: "#92400E" }}>Aún no tienes suficientes meses de ventas registrados para una proyección confiable. Mientras más meses de historial tengas, más precisa será esta proyección.</p>
+            </div>
+          ) : (
+            <div className="flex gap-3 p-4 rounded-xl" style={{ background: C.cream }}>
+              <TrendingUp size={18} color={C.text} className="shrink-0 mt-0.5" />
+              <p className="text-sm" style={{ color: C.text }}>
+                {proyeccion.tendencia === "subiendo" && <>Tus ventas vienen <strong style={{color:C.success}}>subiendo</strong> (un {Math.abs(proyeccion.variacionPct).toFixed(0)}% comparando los meses más recientes con los anteriores). </>}
+                {proyeccion.tendencia === "bajando" && <>Tus ventas vienen <strong style={{color:C.danger}}>bajando</strong> (un {Math.abs(proyeccion.variacionPct).toFixed(0)}% comparando los meses más recientes con los anteriores). </>}
+                {proyeccion.tendencia === "estable" && <>Tus ventas se han mantenido <strong>estables</strong> en los últimos meses. </>}
+                Con base en los últimos {proyeccion.mesesUsados} meses (dándole más peso a los más recientes), para el próximo mes proyectamos ventas por <strong style={{fontFamily:FONT_MONO}}>{formatCLP(proyeccion.ventas)}</strong> y gastos por <strong style={{fontFamily:FONT_MONO}}>{formatCLP(proyeccion.gastos)}</strong>, lo que te dejaría {proyeccion.utilidad>=0?"una ganancia estimada de":"una pérdida estimada de"} <strong style={{fontFamily:FONT_MONO,color:proyeccion.utilidad>=0?C.success:C.danger}}>{formatCLP(Math.abs(proyeccion.utilidad))}</strong>.
+              </p>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             {[
               { label: "Ventas proyectadas", value: formatCLP(proyeccion.ventas), icon: TrendingUp, color: C.success, bg: C.successLight },
@@ -4213,12 +4653,12 @@ function ContabilidadView({ sales, products, gastos, setGastos, proveedores, set
             )}
           </Card>
 
-          {proyeccion.utilidad < 0 && (
+          {proyeccion.utilidad < 0 && proyeccion.mesesUsados >= 2 && (
             <div className="flex gap-3 p-4 rounded-xl" style={{ background: C.dangerLight, border: `1px solid ${C.danger}30` }}>
               <AlertTriangle size={18} color={C.danger} className="shrink-0 mt-0.5" />
               <div>
-                <p className="text-sm font-semibold" style={{ color: C.danger }}>Alerta: proyección de pérdida</p>
-                <p className="text-xs mt-1" style={{ color: "#9B1C1C" }}>Basado en el promedio de los últimos meses, el próximo mes podrías cerrar en negativo. Revisa tus Gastos y considera ajustar precios o reducir costos.</p>
+                <p className="text-sm font-semibold" style={{ color: C.danger }}>Revisa tus gastos</p>
+                <p className="text-xs mt-1" style={{ color: "#9B1C1C" }}>Si la proyección se cumple, el próximo mes cerrarías en negativo. Considera ajustar precios o reducir costos.</p>
               </div>
             </div>
           )}
@@ -4228,27 +4668,28 @@ function ContabilidadView({ sales, products, gastos, setGastos, proveedores, set
       {/* FLUJO DE CAJA */}
       {tab === "flujo" && (
         <div className="flex flex-col gap-5">
-          <p className="text-xs" style={{color:C.textMuted}}>Muestra cómo entra y sale el dinero de tu negocio mes a mes, y cuánto vas acumulando en total.</p>
+          <p className="text-xs" style={{color:C.textMuted}}>Esto es plata REAL que entró y salió de tu negocio — a diferencia del Estado de Resultados, aquí <strong>no</strong> se cuentan los fiados que tus clientes aún no te han pagado, ni las compras a proveedores que tú aún no has pagado. Por eso estos números pueden ser distintos a los de Balance y Resultados: este tab te dice cómo se mueve tu plata de verdad, mes a mes.</p>
 
-          {flujoData.length===0 ? (
+          {flujoCajaReal.length===0 ? (
             <EmptyState icon={ArrowLeftRight} title="Sin datos suficientes" subtitle="Registra ventas y gastos para ver tu flujo de caja" />
           ) : (
             <>
               <Card style={{padding:20}}>
-                <div className="text-xs font-semibold mb-1" style={{color:C.textMuted}}>Saldo acumulado actual</div>
-                <div className="text-2xl font-bold" style={{fontFamily:FONT_MONO,color:flujoData[flujoData.length-1].saldo>=0?C.success:C.danger}}>{formatCLP(flujoData[flujoData.length-1].saldo)}</div>
+                <div className="text-xs font-semibold mb-1" style={{color:C.textMuted}}>Saldo de caja acumulado</div>
+                <div className="text-2xl font-bold" style={{fontFamily:FONT_MONO,color:flujoCajaReal[flujoCajaReal.length-1].saldo>=0?C.success:C.danger}}>{formatCLP(flujoCajaReal[flujoCajaReal.length-1].saldo)}</div>
+                <div className="text-xs mt-1" style={{color:C.textMuted}}>{flujoCajaReal[flujoCajaReal.length-1].saldo>=0?"Ha entrado más plata de la que ha salido desde que empezaste a registrar.":"Ha salido más plata de la que ha entrado — revisa tus gastos y cobros pendientes."}</div>
               </Card>
 
               <Card style={{padding:20}}>
-                <h3 className="text-sm font-bold mb-4" style={{ fontFamily: FONT_DISPLAY, color: C.text }}>Flujo neto por mes</h3>
+                <h3 className="text-sm font-bold mb-4" style={{ fontFamily: FONT_DISPLAY, color: C.text }}>Flujo de caja neto por mes</h3>
                 <ResponsiveContainer width="100%" height={220}>
-                  <BarChart data={flujoData}>
+                  <BarChart data={flujoCajaReal}>
                     <CartesianGrid strokeDasharray="3 3" stroke={C.border} vertical={false} />
                     <XAxis dataKey="mes" tick={{ fontSize: 11, fill: C.textMuted }} axisLine={false} tickLine={false} />
                     <YAxis tick={{ fontSize: 10, fill: C.textMuted }} axisLine={false} tickLine={false} tickFormatter={v => "$" + v / 1000 + "k"} />
                     <Tooltip formatter={v => formatCLP(v)} contentStyle={{ borderRadius: 10, fontSize: 12 }} />
                     <Bar dataKey="flujoNeto" radius={[6,6,0,0]}>
-                      {flujoData.map((d,i)=><Cell key={i} fill={d.flujoNeto>=0?C.success:C.danger}/>)}
+                      {flujoCajaReal.map((d,i)=><Cell key={i} fill={d.flujoNeto>=0?C.success:C.danger}/>)}
                     </Bar>
                   </BarChart>
                 </ResponsiveContainer>
@@ -4256,12 +4697,12 @@ function ContabilidadView({ sales, products, gastos, setGastos, proveedores, set
 
               <Card style={{overflow:"hidden"}}>
                 <table className="w-full text-sm">
-                  <thead><tr style={{background:C.cream}}>{["Mes","Ingresos","Egresos","Flujo neto","Saldo acumulado"].map(h=><th key={h} className="text-left px-4 py-3 font-semibold text-xs" style={{color:C.textMuted}}>{h}</th>)}</tr></thead>
-                  <tbody>{flujoData.map(d=>(
+                  <thead><tr style={{background:C.cream}}>{["Mes","Entró","Salió","Flujo neto","Saldo acumulado"].map(h=><th key={h} className="text-left px-4 py-3 font-semibold text-xs" style={{color:C.textMuted}}>{h}</th>)}</tr></thead>
+                  <tbody>{flujoCajaReal.map(d=>(
                     <tr key={d.mes} style={{borderTop:`1px solid ${C.border}`}}>
                       <td className="px-4 py-3 font-medium">{d.mes}</td>
-                      <td className="px-4 py-3" style={{fontFamily:FONT_MONO,color:C.success}}>{formatCLP(d.ventas)}</td>
-                      <td className="px-4 py-3" style={{fontFamily:FONT_MONO,color:C.danger}}>-{formatCLP(d.gastos)}</td>
+                      <td className="px-4 py-3" style={{fontFamily:FONT_MONO,color:C.success}}>{formatCLP(d.entradas)}</td>
+                      <td className="px-4 py-3" style={{fontFamily:FONT_MONO,color:C.danger}}>-{formatCLP(d.salidas)}</td>
                       <td className="px-4 py-3 font-semibold" style={{fontFamily:FONT_MONO,color:d.flujoNeto>=0?C.success:C.danger}}>{d.flujoNeto>=0?"+":""}{formatCLP(d.flujoNeto)}</td>
                       <td className="px-4 py-3 font-bold" style={{fontFamily:FONT_MONO,color:d.saldo>=0?C.text:C.danger}}>{formatCLP(d.saldo)}</td>
                     </tr>
@@ -4618,15 +5059,15 @@ export default function App({ session, onLogout, isOwner, onOpenAdmin }) {
   const content = (
     <div className="p-4 md:p-7" style={{ paddingBottom: isTablet ? 100 : 32 }}>
       {view === "panel"      && currentUser.role === "admin" && <PanelView products={products} sales={sales} fiados={fiados} pedidos={pedidos} profile={profile} setProfile={setProfile} setView={setView} currentUser={currentUser} />}
-      {view === "inventario" && canAccess("inventario_ver", currentUser.role) && <InventarioView products={products} setProducts={setProducts} showToast={showToast} profile={profile} setProfile={setProfile} gastos={gastos} setGastos={setGastos} readOnly={!canAccess("inventario_editar", currentUser.role)} />}
+      {view === "inventario" && canAccess("inventario_ver", currentUser.role) && <InventarioView products={products} setProducts={setProducts} showToast={showToast} profile={profile} setProfile={setProfile} gastos={gastos} setGastos={setGastos} proveedores={proveedores} setProveedores={setProveedores} readOnly={!canAccess("inventario_editar", currentUser.role)} />}
       {view === "venta"                                       && <VentaView {...viewProps} />}
       {view === "reporte"    && canAccess("reporte", currentUser.role) && <ReporteView sales={sales} products={products} citas={citas} profile={profile} />}
       {view === "contabilidad" && canAccess("contabilidad", currentUser.role) && <ContabilidadView sales={sales} products={products} gastos={gastos} setGastos={setGastos} proveedores={proveedores} setProveedores={setProveedores} fiados={fiados} showToast={showToast} />}
-      {view === "caja"       && canAccess("caja", currentUser.role) && <CajaView sales={sales} fiados={fiados} gastos={gastos} cajaState={cajaState} setCajaState={setCajaState} showToast={showToast} currentUser={currentUser} profile={profile} />}
+      {view === "caja"       && canAccess("caja", currentUser.role) && <CajaView sales={sales} fiados={fiados} gastos={gastos} proveedores={proveedores} cajaState={cajaState} setCajaState={setCajaState} showToast={showToast} currentUser={currentUser} profile={profile} />}
       {view === "pedidos"    && canAccess("pedidos", currentUser.role) && profile.modules?.includes("pedidos") && <PedidosView pedidos={pedidos} setPedidos={setPedidos} products={products} setProducts={setProducts} sales={sales} setSales={setSales} counters={counters} setCounters={setCounters} showToast={showToast} />}
-      {view === "agenda"     && canAccess("agenda", currentUser.role) && profile.modules?.includes("agenda") && <AgendaView profile={profile} setProfile={setProfile} servicios={servicios} setServicios={setServicios} citas={citas} setCitas={setCitas} users={users} showToast={showToast} />}
+      {view === "agenda"     && canAccess("agenda", currentUser.role) && profile.modules?.includes("agenda") && <AgendaView profile={profile} setProfile={setProfile} servicios={servicios} setServicios={setServicios} citas={citas} setCitas={setCitas} users={users} showToast={showToast} sales={sales} setSales={setSales} counters={counters} setCounters={setCounters} />}
       {view === "fiados"     && canAccess("fiados", currentUser.role) && <FiadosView fiados={fiados} setFiados={setFiados} showToast={showToast} />}
-      {view === "boletas"    && canAccess("boletas", currentUser.role) && <DetalleBoletaView sales={sales} setSales={setSales} products={products} setProducts={setProducts} profile={profile} showToast={showToast} />}
+      {view === "boletas"    && canAccess("boletas_ver", currentUser.role) && <DetalleBoletaView sales={sales} setSales={setSales} products={products} setProducts={setProducts} fiados={fiados} setFiados={setFiados} citas={citas} setCitas={setCitas} profile={profile} showToast={showToast} canDevolver={canAccess("boletas_devolver", currentUser.role)} />}
       {view === "configurar" && currentUser.role === "admin" && <ConfigurarView profile={profile} setProfile={setProfile} showToast={showToast} users={users} currentUser={currentUser} onAddUser={addUser} onDeleteUser={deleteUser} onUpdateUser={updateUser} />}
       {view === "tutoriales"                                  && <TutorialesView />}
       {view === "ecommerce"  && currentUser.role === "admin" && <EcommerceView />}

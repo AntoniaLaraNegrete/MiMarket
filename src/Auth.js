@@ -53,10 +53,11 @@ export default function Auth() {
       return;
     }
 
-    // Registrar usuario
-    const { data, error: signError } = await supabase.auth.signUp({
+    // Registrar usuario. El código queda guardado en la cuenta y se canjea en el servidor
+    // la primera vez que la persona entra (en un solo paso, para que nadie más pueda usarlo).
+    const { error: signError } = await supabase.auth.signUp({
       email, password,
-      options: { data: { nombre_negocio: negocio } }
+      options: { data: { nombre_negocio: negocio, codigo_acceso: codigo.toUpperCase().trim() } }
     });
 
     if (signError) {
@@ -64,9 +65,6 @@ export default function Auth() {
       setLoading(false);
       return;
     }
-
-    // Marcar código como usado (a través de la misma función segura)
-    await supabase.rpc('redeem_access_code', { p_codigo: codigo.toUpperCase().trim(), p_email: email });
 
     setMsg('¡Cuenta creada! Revisa tu correo para confirmar tu cuenta y luego inicia sesión.');
     setLoading(false);
